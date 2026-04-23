@@ -1,0 +1,109 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+
+local HITBOX_Size = 15
+local OriginalHitboxSizes = {}
+
+local function GetRole()
+    if not LocalPlayer.Team then return "Unknown" end
+    local name = LocalPlayer.Team.Name
+    if name == "Killer" then return "Killer" end
+    if name == "Survivors" then return "Survivor" end
+    return "Lobby"
+end
+
+local function IsSurvivor(player)
+    if player == LocalPlayer then return false end
+    if not player.Team then return false end
+    return player.Team.Name == "Survivors"
+end
+
+local function ResetAllHitboxes()
+    for player, originalSize in pairs(OriginalHitboxSizes) do
+        if player and player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.Size = originalSize
+                root.Transparency = 1
+                root.CanCollide = true
+            end
+        end
+    end
+    OriginalHitboxSizes = {}
+end
+
+local function UpdateHitboxes()
+    if GetRole() ~= "Killer" then
+        ResetAllHitboxes()
+        return
+    end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and IsSurvivor(player) then
+            local char = player.Character
+            if char then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                
+                if root and hum and hum.Health > 0 then
+                    if not OriginalHitboxSizes[player] then
+                        OriginalHitboxSizes[player] = root.Size
+                        root.Size = Vector3.new(HITBOX_Size, HITBOX_Size, HITBOX_Size)
+                        root.CanCollide = false
+                        root.Transparency = 1
+                    end
+                elseif root and OriginalHitboxSizes[player] then
+                    root.Size = OriginalHitboxSizes[player]
+                    root.Transparency = 1
+                    root.CanCollide = true
+                    OriginalHitboxSizes[player] = nil
+                end
+            end
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        UpdateHitboxes()
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    OriginalHitboxSizes[player] = nil
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    UpdateHitboxes()
+end)
+
+LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+    ResetAllHitboxes()
+    UpdateHitboxes()
+end)
+
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        player.CharacterAdded:Connect(function()
+            UpdateHitboxes()
+        end)
+        player.CharacterRemoving:Connect(function()
+            if OriginalHitboxSizes[player] then
+                local char = player.Character
+                if char then
+                    local root = char:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        root.Size = OriginalHitboxSizes[player]
+                        root.Transparency = 1
+                        root.CanCollide = true
+                    end
+                end
+                OriginalHitboxSizes[player] = nil
+            end
+        end)
+    end
+end
+
+UpdateHitboxes()

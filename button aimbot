@@ -1,0 +1,232 @@
+local aimbotEnabled = false
+local currentTarget = nil
+local maxLockDistance = 35
+
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Camera = workspace.CurrentCamera
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+
+local cachedRole = nil
+local lastRoleCheck = 0
+
+local function GetRole()
+    local now = tick()
+    if now - lastRoleCheck < 0.5 and cachedRole then
+        return cachedRole
+    end
+    if not LocalPlayer.Team then 
+        cachedRole = "Unknown"
+    else
+        local name = LocalPlayer.Team.Name
+        if name == "Killer" then
+            cachedRole = "Killer"
+        elseif name == "Survivors" then
+            cachedRole = "Survivor"
+        else
+            cachedRole = "Lobby"
+        end
+    end
+    lastRoleCheck = now
+    return cachedRole
+end
+
+local function lockMouse()
+    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+    UserInputService.MouseIconEnabled = false
+end
+
+local function unlockMouse()
+    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    UserInputService.MouseIconEnabled = true
+end
+
+local lastTargetSearch = 0
+local function getClosestTargetThrottled()
+    local now = tick()
+    if now - lastTargetSearch < 0.5 then
+        return currentTarget
+    end
+    lastTargetSearch = now
+    
+    local closestTarget = nil
+    local shortestDistance = math.huge
+    local screenCenter = Camera.ViewportSize / 2
+    local playerChar = LocalPlayer.Character
+    if not playerChar then return nil end
+    
+    local playerPosition = playerChar:FindFirstChild("HumanoidRootPart")
+    if not playerPosition then return nil end
+    playerPosition = playerPosition.Position
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local targetPart = player.Character:FindFirstChild("HumanoidRootPart")
+            local humanoid = player.Character:FindFirstChild("Humanoid")
+            if targetPart and humanoid and humanoid.Health > 0 then
+                local distanceFromPlayer = (playerPosition - targetPart.Position).Magnitude
+                
+                if distanceFromPlayer <= maxLockDistance then
+                    local screenPoint, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+                    if onScreen then
+                        local distanceOnScreen = (Vector2.new(screenPoint.X, screenPoint.Y) - screenCenter).Magnitude
+                        if distanceOnScreen < shortestDistance then
+                            closestTarget = player
+                            shortestDistance = distanceOnScreen
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closestTarget
+end
+
+local function lockOnTarget()
+    if currentTarget and currentTarget.Character then
+        local targetPart = currentTarget.Character:FindFirstChild("HumanoidRootPart")
+        if targetPart then
+            Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetPart.Position), 0.9)
+        else
+            currentTarget = nil
+        end
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if aimbotEnabled and GetRole() == "Killer" then
+        if not currentTarget then
+            currentTarget = getClosestTargetThrottled()
+        end
+        if currentTarget then
+            lockOnTarget()
+        end
+    elseif aimbotEnabled and GetRole() ~= "Killer" then
+        aimbotEnabled = false
+        if button then
+            button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+            button.BackgroundTransparency = 0.15
+            stroke.Color = Color3.fromRGB(255, 100, 100)
+        end
+        unlockMouse()
+        currentTarget = nil
+    end
+end)
+
+local button = nil
+local stroke = nil
+local ScreenGui = nil
+
+if not game.CoreGui:FindFirstChild("SimpleAimbot") then
+    ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "SimpleAimbot"
+    ScreenGui.Parent = game.CoreGui
+
+    button = Instance.new("ImageButton")
+    button.Size = UDim2.new(0, 50, 0, 50)
+    button.Position = UDim2.new(1, -210, 1, -420)
+    button.AnchorPoint = Vector2.new(1, 1)
+    button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+    button.BackgroundTransparency = 0.15
+    button.Image = "rbxassetid://3926305904"
+    button.ImageColor3 = Color3.fromRGB(255, 255, 255)
+    button.ImageTransparency = 0.2
+    button.Parent = ScreenGui
+    button.Draggable = false
+
+    local corner = Instance.new("UICorner", button)
+    corner.CornerRadius = UDim.new(1, 0)
+    
+    stroke = Instance.new("UIStroke", button)
+    stroke.Color = Color3.fromRGB(255, 100, 100)
+    stroke.Thickness = 2
+    stroke.Transparency = 0.5
+
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+
+    button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = button.Position
+        end
+    end)
+
+    button.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    button.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            button.Position = UDim2.new(
+                startPos.X.Scale, 
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    button.MouseButton1Click:Connect(function()
+        if not dragging then
+            if GetRole() == "Killer" then
+                aimbotEnabled = not aimbotEnabled
+                
+                if aimbotEnabled then
+                    button.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+                    button.BackgroundTransparency = 0.3
+                    stroke.Color = Color3.fromRGB(100, 255, 100)
+                    lockMouse()
+                else
+                    button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+                    button.BackgroundTransparency = 0.15
+                    stroke.Color = Color3.fromRGB(255, 100, 100)
+                    unlockMouse()
+                    currentTarget = nil
+                end
+            else
+                button.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+                task.wait(0.1)
+                button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+            end
+        end
+        dragging = false
+    end)
+else
+    ScreenGui = game.CoreGui.SimpleAimbot
+    button = ScreenGui:FindFirstChildWhichIsA("ImageButton")
+    stroke = button and button:FindFirstChildWhichIsA("UIStroke")
+end
+
+LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+    if ScreenGui then
+        if GetRole() == "Killer" then
+            ScreenGui.Enabled = true
+        else
+            ScreenGui.Enabled = false
+            if aimbotEnabled then
+                aimbotEnabled = false
+                if button then
+                    button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+                    button.BackgroundTransparency = 0.15
+                    stroke.Color = Color3.fromRGB(255, 100, 100)
+                end
+                unlockMouse()
+                currentTarget = nil
+            end
+        end
+    end
+end)
+
+if GetRole() == "Killer" then
+    ScreenGui.Enabled = true
+else
+    ScreenGui.Enabled = false
+end

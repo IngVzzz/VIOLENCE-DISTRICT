@@ -1,0 +1,77 @@
+--[[
+    Script: Disable SkillCheckEvent - Versi Stabil
+    Fitur: Auto reload saat cutscene, ringan, tanpa loop berat
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local isDestroyed = false
+
+-- Fungsi penghancur (hanya jalan sekali)
+local function DisableSkillCheckEvent()
+    if isDestroyed then return true end
+    
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then return false end
+    
+    local HealingFolder = Remotes:FindFirstChild("Healing")
+    if not HealingFolder then return false end
+    
+    local SkillCheckEvent = HealingFolder:FindFirstChild("SkillCheckEvent")
+    if not SkillCheckEvent then return false end
+    
+    SkillCheckEvent:Destroy()
+    isDestroyed = true
+    print("SkillCheckEvent dihancurkan")
+    return true
+end
+
+-- Reset status saat cutscene dimulai (biar bisa hancurkan lagi)
+local function ResetAndDestroy()
+    isDestroyed = false
+    DisableSkillCheckEvent()
+end
+
+-- Deteksi cutscene (tanpa loop, pakai event saja)
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+playerGui.ChildAdded:Connect(function(gui)
+    if gui:IsA("ScreenGui") then
+        local name = gui.Name:lower()
+        if name:find("cutscene") or name:find("intro") or name:find("cinematic") or name:find("round") then
+            task.wait(0.3)  -- tunggu sebentar
+            ResetAndDestroy()
+            gui:Destroy()   -- hapus cutscene biar cepet
+        end
+    end
+end)
+
+-- Reset saat karakter respawn (sering setelah cutscene)
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    ResetAndDestroy()
+end)
+
+-- Pantau jika remote dibuat ulang (paket event, bukan loop)
+local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+if remotes then
+    remotes.ChildAdded:Connect(function(child)
+        if child.Name == "Healing" then
+            task.wait(0.1)
+            ResetAndDestroy()
+            
+            child.ChildAdded:Connect(function(grandChild)
+                if grandChild.Name == "SkillCheckEvent" then
+                    grandChild:Destroy()
+                end
+            end)
+        end
+    end)
+end
+
+-- Eksekusi pertama
+DisableSkillCheckEvent()
+
+print("Script Stabil Aktif - Tidak ada loop berat, FPS aman")
