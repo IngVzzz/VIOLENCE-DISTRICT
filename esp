@@ -1,6 +1,10 @@
+-- ==========================================
+-- ESP HYBRID EDITION - Toggle per role + No Loop
+-- TANPA NOTIF CHAT (SUNYI SEPI)
+-- ==========================================
+
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
-local RunService = game:GetService("RunService")
 
 local Hook = {
     Players = {
@@ -9,115 +13,111 @@ local Hook = {
     }
 }
 
-local activeHighlights = {}
+local isActive = false
 
-local function GetRole()
-    if not localPlayer.Team then return "Unknown" end
+local function GetLocalRole()
+    if not localPlayer.Team then return "Lobby" end
     local name = localPlayer.Team.Name
     if name == "Killer" then return "Killer" end
     if name == "Survivors" then return "Survivor" end
     return "Lobby"
 end
 
-local function ESP(obj, color)
-    local existing = obj:FindFirstChild("ESP_Highlight")
-    if existing then
-        if existing.FillColor == color then return end
-        existing:Destroy()
-    end
+local function RemoveHighlight(char)
+    local h = char:FindFirstChild("ESP_Highlight")
+    if h then h:Destroy() end
+end
+
+local function ApplyHighlight(char, color)
+    if not char then return end
+    RemoveHighlight(char)
     
     local h = Instance.new("Highlight")
     h.Name = "ESP_Highlight"
-    h.Adornee = obj
     h.FillColor = color
     h.OutlineColor = color
     h.FillTransparency = 0.8
-    h.OutlineTransparency = 0.45
+    h.OutlineTransparency = 0.4
     h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    h.Parent = obj
-    activeHighlights[obj] = h
+    h.Parent = char
 end
 
-local function removeESP(character)
-    local highlight = character:FindFirstChild("ESP_Highlight")
-    if highlight then
-        highlight:Destroy()
-        activeHighlights[character] = nil
-    end
-end
-
-local function removeAllESP()
-    for obj, highlight in pairs(activeHighlights) do
-        if highlight then highlight:Destroy() end
-    end
-    activeHighlights = {}
-end
-
-local function updateESP()
-    local myRole = GetRole()
+local function UpdateAllHighlights()
+    if not isActive then return end
     
-    if myRole ~= "Survivor" and myRole ~= "Killer" then
-        removeAllESP()
-        return
-    end
-    
-    for _, p in ipairs(Players:GetPlayers()) do
+    for _, p in pairs(Players:GetPlayers()) do
         if p ~= localPlayer and p.Character then
             local teamName = p.Team and p.Team.Name
-            local shouldESP = false
             local color = nil
             
             if teamName == "Killer" and Hook.Players["Killer"].On then
-                shouldESP = true
                 color = Hook.Players["Killer"].Color
             elseif teamName == "Survivors" and Hook.Players["Survivor"].On then
-                shouldESP = true
                 color = Hook.Players["Survivor"].Color
             end
             
-            if shouldESP then
-                ESP(p.Character, color)
+            if color then
+                ApplyHighlight(p.Character, color)
             else
-                if p.Character then
-                    removeESP(p.Character)
-                end
+                RemoveHighlight(p.Character)
             end
         end
     end
 end
 
-Players.PlayerAdded:Connect(function(player)
-    if player ~= localPlayer then
-        player.CharacterAdded:Connect(function(character)
+local function DisableESP()
+    if not isActive then return end
+    isActive = false
+    for _, p in pairs(Players:GetPlayers()) do
+        if p.Character then RemoveHighlight(p.Character) end
+    end
+end
+
+local function EnableESP()
+    if isActive then return end
+    isActive = true
+    UpdateAllHighlights()
+end
+
+local function CheckAndToggle()
+    local role = GetLocalRole()
+    if role == "Killer" or role == "Survivor" then
+        EnableESP()
+    else
+        DisableESP()
+    end
+end
+
+-- Setup event (GA ADA LOOP)
+localPlayer:GetPropertyChangedSignal("Team"):Connect(CheckAndToggle)
+localPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    CheckAndToggle()
+end)
+
+Players.PlayerAdded:Connect(function(p)
+    if p ~= localPlayer then
+        p.CharacterAdded:Connect(function()
             task.wait(0.3)
-            updateESP()
+            if isActive then UpdateAllHighlights() end
         end)
     end
 end)
 
-Players.PlayerRemoving:Connect(function(player)
-    if player.Character then
-        removeESP(player.Character)
+Players.PlayerRemoving:Connect(function(p)
+    if p.Character then RemoveHighlight(p.Character) end
+end)
+
+-- Buat player yang udah ada
+for _, p in pairs(Players:GetPlayers()) do
+    if p ~= localPlayer then
+        p.CharacterAdded:Connect(function()
+            task.wait(0.3)
+            if isActive then UpdateAllHighlights() end
+        end)
     end
-end)
+end
 
-localPlayer:GetPropertyChangedSignal("Team"):Connect(function()
-    removeAllESP()
-    updateESP()
-end)
+CheckAndToggle()
 
-localPlayer.CharacterAdded:Connect(function()
-    task.wait(0.5)
-    updateESP()
-end)
-
-updateESP()
-
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if GetRole() == "Survivor" or GetRole() == "Killer" then
-            updateESP()
-        end
-    end
-end)
+-- NOTIF UDAH GUE HAPUS. SUNYI SEPI. GA ADA YANG BACA.
