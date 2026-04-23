@@ -1,0 +1,87 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local destroyedRemotes = {
+    Healing = false,
+    Generator = false
+}
+
+local function DisableSkillCheckEvent(folderName)
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then return false end
+
+    local targetFolder = Remotes:FindFirstChild(folderName)
+    if not targetFolder then return false end
+
+    local SkillCheckEvent = targetFolder:FindFirstChild("SkillCheckEvent")
+    if SkillCheckEvent then
+        SkillCheckEvent:Destroy()
+    end
+
+    destroyedRemotes[folderName] = true
+    return true
+end
+
+local function DestroyBoth()
+    destroyedRemotes.Healing = false
+    destroyedRemotes.Generator = false
+    DisableSkillCheckEvent("Healing")
+    DisableSkillCheckEvent("Generator")
+end
+
+local function WatchFolder(folderName)
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then return end
+
+    local targetFolder = Remotes:FindFirstChild(folderName)
+    if not targetFolder then return end
+
+    local existing = targetFolder:FindFirstChild("SkillCheckEvent")
+    if existing then existing:Destroy() end
+
+    local conn
+    conn = targetFolder.ChildAdded:Connect(function(child)
+        if child.Name == "SkillCheckEvent" then
+            child:Destroy()
+            destroyedRemotes[folderName] = true
+        end
+    end)
+
+    targetFolder.AncestryChanged:Connect(function()
+        if not targetFolder.Parent then
+            conn:Disconnect()
+        end
+    end)
+end
+
+local function WatchRemotesFolder()
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then return end
+
+    local function AddWatcher(folderName)
+        if Remotes:FindFirstChild(folderName) then
+            WatchFolder(folderName)
+        end
+    end
+
+    AddWatcher("Healing")
+    AddWatcher("Generator")
+
+    Remotes.ChildAdded:Connect(function(child)
+        if child.Name == "Healing" or child.Name == "Generator" then
+            task.wait(0.1)
+            WatchFolder(child.Name)
+            DisableSkillCheckEvent(child.Name)
+        end
+    end)
+end
+
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    DestroyBoth()
+end)
+
+WatchRemotesFolder()
+DestroyBoth()
