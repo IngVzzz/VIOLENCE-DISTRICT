@@ -1,36 +1,25 @@
-local aimbotEnabled = false
-local currentTarget = nil
-local maxLockDistance = 35
+-- ==========================================
+-- AIMBOT KENTANG EDITION (by Demox)
+-- FPS STABIL, GA LOOP BERAT, FUNGSI TETAP SAMA
+-- ==========================================
 
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
-local Camera = workspace.CurrentCamera
 local UserInputService = game:GetService("UserInputService")
-
+local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
-local cachedRole = nil
-local lastRoleCheck = 0
+local aimbotEnabled = false
+local currentTarget = nil
+local maxLockDistance = 35
+local SMOOTHNESS = 0.85  -- Biar ga ngejedag
 
 local function GetRole()
-    local now = tick()
-    if now - lastRoleCheck < 0.5 and cachedRole then
-        return cachedRole
-    end
-    if not LocalPlayer.Team then 
-        cachedRole = "Unknown"
-    else
-        local name = LocalPlayer.Team.Name
-        if name == "Killer" then
-            cachedRole = "Killer"
-        elseif name == "Survivors" then
-            cachedRole = "Survivor"
-        else
-            cachedRole = "Lobby"
-        end
-    end
-    lastRoleCheck = now
-    return cachedRole
+    if not LocalPlayer.Team then return "Lobby" end
+    local name = LocalPlayer.Team.Name
+    if name == "Killer" then return "Killer" end
+    if name == "Survivors" then return "Survivor" end
+    return "Lobby"
 end
 
 local function lockMouse()
@@ -43,78 +32,76 @@ local function unlockMouse()
     UserInputService.MouseIconEnabled = true
 end
 
-local lastTargetSearch = 0
-local function getClosestTargetThrottled()
-    local now = tick()
-    if now - lastTargetSearch < 0.5 then
-        return currentTarget
-    end
-    lastTargetSearch = now
+local function getClosestTarget()
+    local closest = nil
+    local shortestDist = math.huge
+    local center = Camera.ViewportSize / 2
+    local myChar = LocalPlayer.Character
+    if not myChar then return nil end
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
     
-    local closestTarget = nil
-    local shortestDistance = math.huge
-    local screenCenter = Camera.ViewportSize / 2
-    local playerChar = LocalPlayer.Character
-    if not playerChar then return nil end
-    
-    local playerPosition = playerChar:FindFirstChild("HumanoidRootPart")
-    if not playerPosition then return nil end
-    playerPosition = playerPosition.Position
-    
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local targetPart = player.Character:FindFirstChild("HumanoidRootPart")
-            local humanoid = player.Character:FindFirstChild("Humanoid")
-            if targetPart and humanoid and humanoid.Health > 0 then
-                local distanceFromPlayer = (playerPosition - targetPart.Position).Magnitude
-                
-                if distanceFromPlayer <= maxLockDistance then
-                    local screenPoint, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-                    if onScreen then
-                        local distanceOnScreen = (Vector2.new(screenPoint.X, screenPoint.Y) - screenCenter).Magnitude
-                        if distanceOnScreen < shortestDistance then
-                            closestTarget = player
-                            shortestDistance = distanceOnScreen
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local char = p.Character
+            if char then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                local hum = char:FindFirstChild("Humanoid")
+                if root and hum and hum.Health > 0 then
+                    local dist3D = (myRoot.Position - root.Position).Magnitude
+                    if dist3D <= maxLockDistance then
+                        local screenPoint, onScreen = Camera:WorldToViewportPoint(root.Position)
+                        if onScreen then
+                            local screenDist = (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude
+                            if screenDist < shortestDist then
+                                closest = p
+                                shortestDist = screenDist
+                            end
                         end
                     end
                 end
             end
         end
     end
-    return closestTarget
-end
-
-local function lockOnTarget()
-    if currentTarget and currentTarget.Character then
-        local targetPart = currentTarget.Character:FindFirstChild("HumanoidRootPart")
-        if targetPart then
-            Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetPart.Position), 0.9)
-        else
-            currentTarget = nil
-        end
-    end
+    return closest
 end
 
 RunService.RenderStepped:Connect(function()
-    if aimbotEnabled and GetRole() == "Killer" then
-        if not currentTarget then
-            currentTarget = getClosestTargetThrottled()
+    if not aimbotEnabled then return end
+    if GetRole() ~= "Killer" then
+        if aimbotEnabled then
+            aimbotEnabled = false
+            unlockMouse()
+            currentTarget = nil
+            if button then
+                button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+                button.BackgroundTransparency = 0.15
+                if stroke then stroke.Color = Color3.fromRGB(255, 100, 100) end
+            end
         end
-        if currentTarget then
-            lockOnTarget()
+        return
+    end
+    
+    -- Cari target kalo ga ada
+    if not currentTarget then
+        currentTarget = getClosestTarget()
+    end
+    
+    -- Lock ke target
+    if currentTarget and currentTarget.Character then
+        local root = currentTarget.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            local lookAt = CFrame.new(Camera.CFrame.Position, root.Position)
+            Camera.CFrame = Camera.CFrame:Lerp(lookAt, SMOOTHNESS)
+        else
+            currentTarget = nil
         end
-    elseif aimbotEnabled and GetRole() ~= "Killer" then
-        aimbotEnabled = false
-        if button then
-            button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-            button.BackgroundTransparency = 0.15
-            stroke.Color = Color3.fromRGB(255, 100, 100)
-        end
-        unlockMouse()
+    else
         currentTarget = nil
     end
 end)
 
+-- ========== GUI SAMA PERSIS SEPERTI SCRIPT LO ==========
 local button = nil
 local stroke = nil
 local ScreenGui = nil
@@ -216,7 +203,7 @@ LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
                 if button then
                     button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
                     button.BackgroundTransparency = 0.15
-                    stroke.Color = Color3.fromRGB(255, 100, 100)
+                    if stroke then stroke.Color = Color3.fromRGB(255, 100, 100) end
                 end
                 unlockMouse()
                 currentTarget = nil
