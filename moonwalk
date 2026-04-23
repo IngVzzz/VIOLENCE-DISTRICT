@@ -1,47 +1,37 @@
-local player = game.Players.LocalPlayer
-local LocalPlayer = player
+-- ==========================================
+-- MOONWALK MOBILE ONLY - NO KEYBOARD
+-- Buat HP kentang, ga ada event keyboard nganggur
+-- ==========================================
+
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 
-local char = player.Character or player.CharacterAdded:Wait()
+local LocalPlayer = Players.LocalPlayer
+local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local humanoid = char:WaitForChild("Humanoid")
-local root = char:WaitForChild("HumanoidRootPart")
+local rootPart = char:WaitForChild("HumanoidRootPart")
 
 local currentGui = nil
 local button = nil
-
-local cachedRole = nil
-local lastRoleCheck = 0
-
-local function GetRole()
-    local now = tick()
-    if now - lastRoleCheck < 0.5 and cachedRole then
-        return cachedRole
-    end
-    if not player.Team then 
-        cachedRole = "Unknown"
-    else
-        local name = player.Team.Name
-        if name == "Killer" then
-            cachedRole = "Killer"
-        elseif name == "Survivors" then
-            cachedRole = "Survivor"
-        else
-            cachedRole = "Lobby"
-        end
-    end
-    lastRoleCheck = now
-    return cachedRole
-end
-
 local moonwalk = false
+local turningLeft = false
+local turningRight = false
+
 local baseYaw = 0
 local currentYaw = 0
 local maxTurn = 40
 local turnSpeed = 850
 local returnSpeed = 800
-local turningLeft, turningRight = false, false
+
+local function GetRole()
+    if not LocalPlayer.Team then return "Lobby" end
+    local name = LocalPlayer.Team.Name
+    if name == "Killer" then return "Killer" end
+    if name == "Survivors" then return "Survivor" end
+    return "Lobby"
+end
 
 local function getYaw(cf)
     local _, y, _ = cf:ToEulerAnglesYXZ()
@@ -49,16 +39,15 @@ local function getYaw(cf)
 end
 
 local function setYaw(cf, yaw)
-    local pos = cf.Position
-    return CFrame.new(pos) * CFrame.Angles(0, math.rad(yaw), 0)
+    return CFrame.new(cf.Position) * CFrame.Angles(0, math.rad(yaw), 0)
 end
 
 local function enableMoonwalk()
     if GetRole() ~= "Survivor" then return end
-    if not root or not humanoid then return end
+    if not rootPart or not humanoid then return end
     moonwalk = true
     humanoid.AutoRotate = false
-    baseYaw = getYaw(root.CFrame)
+    baseYaw = getYaw(rootPart.CFrame)
     currentYaw = baseYaw
     if button then
         button.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
@@ -66,6 +55,7 @@ local function enableMoonwalk()
 end
 
 local function disableMoonwalk()
+    if not moonwalk then return end
     moonwalk = false
     if humanoid then
         humanoid.AutoRotate = true
@@ -117,40 +107,19 @@ local function createGUI()
     button.TouchEnded:Connect(disableMoonwalk)
 end
 
-player.CharacterAdded:Connect(function(newChar)
-    task.wait(0.5)
+-- Respawn karakter
+LocalPlayer.CharacterAdded:Connect(function(newChar)
     char = newChar
     humanoid = newChar:WaitForChild("Humanoid")
-    root = newChar:WaitForChild("HumanoidRootPart")
+    rootPart = newChar:WaitForChild("HumanoidRootPart")
     if moonwalk then
         disableMoonwalk()
     end
 end)
 
-UIS.InputBegan:Connect(function(input)
-    if not moonwalk then return end
-    if GetRole() ~= "Survivor" then
-        if moonwalk then disableMoonwalk() end
-        return
-    end
-    if input.KeyCode == Enum.KeyCode.D then
-        turningRight = true
-    elseif input.KeyCode == Enum.KeyCode.A then
-        turningLeft = true
-    end
-end)
-
-UIS.InputEnded:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.D then
-        turningRight = false
-    elseif input.KeyCode == Enum.KeyCode.A then
-        turningLeft = false
-    end
-end)
-
+-- TOUCH CONTROL (mobile aja)
 UIS.TouchMoved:Connect(function(input)
-    if not moonwalk then return end
-    if GetRole() ~= "Survivor" then return end
+    if not moonwalk or GetRole() ~= "Survivor" then return end
     if math.abs(input.Delta.X) > 3 then
         if input.Delta.X > 0 then
             turningRight = true
@@ -167,24 +136,32 @@ UIS.TouchEnded:Connect(function()
     turningRight = false
 end)
 
+-- RENDER LOOP (optimized)
 RunService.RenderStepped:Connect(function(dt)
-    if moonwalk and root and humanoid and GetRole() == "Survivor" then
-        if turningLeft then
-            currentYaw = math.clamp(currentYaw - turnSpeed * dt, baseYaw - maxTurn, baseYaw + maxTurn)
-        elseif turningRight then
-            currentYaw = math.clamp(currentYaw + turnSpeed * dt, baseYaw - maxTurn, baseYaw + maxTurn)
-        else
-            if currentYaw < baseYaw then
-                currentYaw = math.min(currentYaw + returnSpeed * dt, baseYaw)
-            elseif currentYaw > baseYaw then
-                currentYaw = math.max(currentYaw - returnSpeed * dt, baseYaw)
-            end
-        end
-        root.CFrame = setYaw(CFrame.new(root.CFrame.Position), currentYaw)
+    if not moonwalk then return end
+    if GetRole() ~= "Survivor" then
+        if moonwalk then disableMoonwalk() end
+        return
     end
+    if not rootPart or not humanoid then return end
+    
+    if turningLeft then
+        currentYaw = math.clamp(currentYaw - turnSpeed * dt, baseYaw - maxTurn, baseYaw + maxTurn)
+    elseif turningRight then
+        currentYaw = math.clamp(currentYaw + turnSpeed * dt, baseYaw - maxTurn, baseYaw + maxTurn)
+    else
+        if currentYaw < baseYaw then
+            currentYaw = math.min(currentYaw + returnSpeed * dt, baseYaw)
+        elseif currentYaw > baseYaw then
+            currentYaw = math.max(currentYaw - returnSpeed * dt, baseYaw)
+        end
+    end
+    
+    rootPart.CFrame = setYaw(CFrame.new(rootPart.CFrame.Position), currentYaw)
 end)
 
-player:GetPropertyChangedSignal("Team"):Connect(function()
+-- Pas ganti team
+LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
     if GetRole() == "Survivor" then
         createGUI()
     else
@@ -195,4 +172,5 @@ player:GetPropertyChangedSignal("Team"):Connect(function()
     end
 end)
 
+-- Start awal
 createGUI()
