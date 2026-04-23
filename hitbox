@@ -1,12 +1,18 @@
+-- ==========================================
+-- HITBOX EXPANDER - ULTRA KENTANG
+-- Beban seminimal mungkin. Support penuh.
+-- ==========================================
+
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local RunService = game:GetService("RunService")
 
 local HITBOX_Size = 15
 local OriginalHitboxSizes = {}
+local active = false
+local updateTimer = 0
 
 local function GetRole()
-    if not LocalPlayer.Team then return "Unknown" end
+    if not LocalPlayer.Team then return "Lobby" end
     local name = LocalPlayer.Team.Name
     if name == "Killer" then return "Killer" end
     if name == "Survivors" then return "Survivor" end
@@ -19,91 +25,99 @@ local function IsSurvivor(player)
     return player.Team.Name == "Survivors"
 end
 
-local function ResetAllHitboxes()
-    for player, originalSize in pairs(OriginalHitboxSizes) do
-        if player and player.Character then
-            local root = player.Character:FindFirstChild("HumanoidRootPart")
-            if root then
-                root.Size = originalSize
-                root.Transparency = 1
-                root.CanCollide = true
-            end
+local function ResetHitbox(player)
+    local orig = OriginalHitboxSizes[player]
+    if orig and player.Character then
+        local root = player.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.Size = orig
+            root.CanCollide = true
         end
+    end
+    OriginalHitboxSizes[player] = nil
+end
+
+local function ResetAll()
+    for p, _ in pairs(OriginalHitboxSizes) do
+        ResetHitbox(p)
     end
     OriginalHitboxSizes = {}
 end
 
-local function UpdateHitboxes()
-    if GetRole() ~= "Killer" then
-        ResetAllHitboxes()
+local function ExpandHitbox(player)
+    if not active then return end
+    if not IsSurvivor(player) then return end
+    
+    local char = player.Character
+    if not char then return end
+    
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not root or not hum or hum.Health <= 0 then
+        ResetHitbox(player)
         return
     end
     
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and IsSurvivor(player) then
-            local char = player.Character
-            if char then
-                local root = char:FindFirstChild("HumanoidRootPart")
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                
-                if root and hum and hum.Health > 0 then
-                    if not OriginalHitboxSizes[player] then
-                        OriginalHitboxSizes[player] = root.Size
-                        root.Size = Vector3.new(HITBOX_Size, HITBOX_Size, HITBOX_Size)
-                        root.CanCollide = false
-                        root.Transparency = 1
-                    end
-                elseif root and OriginalHitboxSizes[player] then
-                    root.Size = OriginalHitboxSizes[player]
-                    root.Transparency = 1
-                    root.CanCollide = true
-                    OriginalHitboxSizes[player] = nil
-                end
+    if not OriginalHitboxSizes[player] then
+        OriginalHitboxSizes[player] = root.Size
+        root.Size = Vector3.new(HITBOX_Size, HITBOX_Size, HITBOX_Size)
+        root.CanCollide = false
+    end
+end
+
+-- Update pake timer (maks 4x per detik)
+game:GetService("RunService").RenderStepped:Connect(function(dt)
+    if GetRole() ~= "Killer" then
+        if active then
+            active = false
+            ResetAll()
+        end
+        return
+    end
+    
+    if not active then
+        active = true
+    end
+    
+    updateTimer = updateTimer + dt
+    if updateTimer >= 0.25 then  -- 4x per detik
+        updateTimer = 0
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                ExpandHitbox(p)
             end
         end
     end
-end
+end)
 
-Players.PlayerAdded:Connect(function(player)
-    player.CharacterAdded:Connect(function()
-        UpdateHitboxes()
+-- Auto reset pas ganti team
+LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+    active = false
+    ResetAll()
+    task.wait(0.2)
+    if GetRole() == "Killer" then
+        active = true
+    end
+end)
+
+-- Player baru join
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(0.3)
+        ExpandHitbox(p)
     end)
 end)
 
-Players.PlayerRemoving:Connect(function(player)
-    OriginalHitboxSizes[player] = nil
-end)
+-- Player keluar
+Players.PlayerRemoving:Connect(ResetHitbox)
 
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(0.5)
-    UpdateHitboxes()
-end)
-
-LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
-    ResetAllHitboxes()
-    UpdateHitboxes()
-end)
-
-for _, player in ipairs(Players:GetPlayers()) do
-    if player ~= LocalPlayer then
-        player.CharacterAdded:Connect(function()
-            UpdateHitboxes()
-        end)
-        player.CharacterRemoving:Connect(function()
-            if OriginalHitboxSizes[player] then
-                local char = player.Character
-                if char then
-                    local root = char:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        root.Size = OriginalHitboxSizes[player]
-                        root.Transparency = 1
-                        root.CanCollide = true
-                    end
-                end
-                OriginalHitboxSizes[player] = nil
-            end
+-- Setup awal
+active = (GetRole() == "Killer")
+for _, p in pairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then
+        task.spawn(function()
+            task.wait(0.5)
+            ExpandHitbox(p)
         end)
     end
 end
-
-UpdateHitboxes()
