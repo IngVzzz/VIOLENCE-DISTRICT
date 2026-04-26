@@ -1,6 +1,6 @@
 -- ==========================================
--- ESP HYBRID EDITION - Toggle per role + No Loop
--- TANPA NOTIF CHAT (SUNYI SEPI)
+-- ESP HYBRID EDITION - STABILIZED VERSION
+-- TANPA NOTIF, TANPA LOOP, ANTI FPS DROP
 -- ==========================================
 
 local Players = game:GetService("Players")
@@ -14,6 +14,7 @@ local Hook = {
 }
 
 local isActive = false
+local activeHighlights = {} -- track aktif highlight
 
 local function GetLocalRole()
     if not localPlayer.Team then return "Lobby" end
@@ -24,8 +25,12 @@ local function GetLocalRole()
 end
 
 local function RemoveHighlight(char)
+    if not char then return end
     local h = char:FindFirstChild("ESP_Highlight")
-    if h then h:Destroy() end
+    if h then 
+        activeHighlights[char] = nil
+        h:Destroy() 
+    end
 end
 
 local function ApplyHighlight(char, color)
@@ -40,13 +45,14 @@ local function ApplyHighlight(char, color)
     h.OutlineTransparency = 0.3
     h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     h.Parent = char
+    activeHighlights[char] = h
 end
 
 local function UpdateAllHighlights()
     if not isActive then return end
     
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= localPlayer and p.Character then
+        if p ~= localPlayer and p.Character and p.Character.Parent then
             local teamName = p.Team and p.Team.Name
             local color = nil
             
@@ -68,9 +74,10 @@ end
 local function DisableESP()
     if not isActive then return end
     isActive = false
-    for _, p in pairs(Players:GetPlayers()) do
-        if p.Character then RemoveHighlight(p.Character) end
+    for char, _ in pairs(activeHighlights) do
+        RemoveHighlight(char)
     end
+    activeHighlights = {}
 end
 
 local function EnableESP()
@@ -88,36 +95,49 @@ local function CheckAndToggle()
     end
 end
 
--- Setup event (GA ADA LOOP)
+-- Setup event
 localPlayer:GetPropertyChangedSignal("Team"):Connect(CheckAndToggle)
 localPlayer.CharacterAdded:Connect(function()
-    task.wait(0.5)
+    task.wait(0.3)
     CheckAndToggle()
 end)
 
+local function onCharacterAdded(p)
+    p.CharacterAdded:Connect(function(char)
+        task.wait(0.3)
+        if isActive and char and char.Parent then
+            UpdateAllHighlights()
+        end
+    end)
+    -- Tambahan: bersihkan saat character removed
+    if p.Character then
+        p.Character.AncestryChanged:Connect(function()
+            if not p.Character or not p.Character.Parent then
+                RemoveHighlight(p.Character)
+            end
+        end)
+    end
+end
+
 Players.PlayerAdded:Connect(function(p)
     if p ~= localPlayer then
-        p.CharacterAdded:Connect(function()
-            task.wait(0.3)
-            if isActive then UpdateAllHighlights() end
-        end)
+        onCharacterAdded(p)
     end
 end)
 
 Players.PlayerRemoving:Connect(function(p)
-    if p.Character then RemoveHighlight(p.Character) end
+    if p.Character then 
+        RemoveHighlight(p.Character) 
+    end
 end)
 
 -- Buat player yang udah ada
 for _, p in pairs(Players:GetPlayers()) do
     if p ~= localPlayer then
-        p.CharacterAdded:Connect(function()
-            task.wait(0.3)
-            if isActive then UpdateAllHighlights() end
-        end)
+        onCharacterAdded(p)
     end
 end
 
 CheckAndToggle()
 
--- NOTIF UDAH GUE HAPUS. SUNYI SEPI. GA ADA YANG BACA.
+-- SUNYI SEPI. STABIL. SIAP PAKAI.
