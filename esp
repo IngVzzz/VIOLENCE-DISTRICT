@@ -8,8 +8,8 @@ local localPlayer = Players.LocalPlayer
 
 local Hook = {
     Players = {
-        ["Killer"] = {Color = Color3.fromRGB(255, 93, 108), On = true},
-        ["Survivor"] = {Color = Color3.fromRGB(64, 224, 255), On = true}
+        ["Killer"] = {Color = Color3.fromRGB(255, 0, 0), On = true},
+        ["Survivor"] = {Color = Color3.fromRGB(0, 100, 255), On = true}
     }
 }
 
@@ -37,7 +37,7 @@ local function ApplyHighlight(char, color)
     h.FillColor = color
     h.OutlineColor = color
     h.FillTransparency = 0.8
-    h.OutlineTransparency = 0.4
+    h.OutlineTransparency = 0.3
     h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     h.Parent = char
 end
