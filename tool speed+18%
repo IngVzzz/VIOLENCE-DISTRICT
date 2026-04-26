@@ -1,0 +1,81 @@
+-- Speed Tool | Equip = ON | Unequip = OFF
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Buat Tool
+local tool = Instance.new("Tool")
+tool.Name = "Speed Boost"
+tool.RequiresHandle = false
+tool.CanBeDropped = false
+tool.Parent = LocalPlayer.Backpack
+
+-- Variabel
+local speedValue = 18.88
+local originalSpeed = nil
+local isActive = false
+local updateConnection = nil
+
+local function GetHumanoid()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    return char:FindFirstChildOfClass("Humanoid")
+end
+
+local function UpdateSpeed()
+    local hum = GetHumanoid()
+    if not hum then return end
+    
+    if isActive then
+        if originalSpeed == nil then
+            originalSpeed = hum.WalkSpeed
+        end
+        hum.WalkSpeed = speedValue
+    else
+        if originalSpeed then
+            hum.WalkSpeed = originalSpeed
+        end
+    end
+end
+
+-- Loop untuk menjaga speed (melawan reset game)
+local function StartLoop()
+    if updateConnection then return end
+    updateConnection = game:GetService("RunService").Heartbeat:Connect(function()
+        UpdateSpeed()
+    end)
+end
+
+local function StopLoop()
+    if updateConnection then
+        updateConnection:Disconnect()
+        updateConnection = nil
+    end
+end
+
+-- Event ketika tool di-equip
+tool.Equipped:Connect(function()
+    isActive = true
+    local hum = GetHumanoid()
+    if hum then
+        originalSpeed = hum.WalkSpeed
+    end
+    StartLoop()
+end)
+
+-- Event ketika tool di-unequip
+tool.Unequipped:Connect(function()
+    isActive = false
+    StopLoop()
+    local hum = GetHumanoid()
+    if hum and originalSpeed then
+        hum.WalkSpeed = originalSpeed
+    end
+end)
+
+-- Cleanup jika tool dihancurkan
+tool.AncestryChanged:Connect(function()
+    if not tool.Parent then
+        StopLoop()
+    end
+end)
