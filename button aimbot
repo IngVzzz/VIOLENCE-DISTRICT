@@ -8,6 +8,10 @@ local aimbotEnabled = false
 local currentTarget = nil
 local maxLockDistance = 35
 local SMOOTHNESS = 0.85
+local activeConnections = {}
+local button = nil
+local stroke = nil
+local ScreenGui = nil
 
 local function GetRole()
     if not LocalPlayer.Team then return "Lobby" end
@@ -28,6 +32,7 @@ local function unlockMouse()
 end
 
 local function getClosestTarget()
+    if not Camera then return nil end
     local closest = nil
     local shortestDist = math.huge
     local center = Camera.ViewportSize / 2
@@ -61,44 +66,27 @@ local function getClosestTarget()
     return closest
 end
 
-RunService.RenderStepped:Connect(function()
-    if not aimbotEnabled then return end
-    if GetRole() ~= "Killer" then
-        if aimbotEnabled then
-            aimbotEnabled = false
-            unlockMouse()
-            currentTarget = nil
-            if button then
-                button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-                button.BackgroundTransparency = 0.15
-                if stroke then stroke.Color = Color3.fromRGB(255, 100, 100) end
-            end
-        end
+local function UpdateButtonUI()
+    if not button then return end
+    if aimbotEnabled then
+        button.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+        button.BackgroundTransparency = 0.3
+        if stroke then stroke.Color = Color3.fromRGB(100, 255, 100) end
+    else
+        button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+        button.BackgroundTransparency = 0.15
+        if stroke then stroke.Color = Color3.fromRGB(255, 100, 100) end
+    end
+end
+
+local function CreateGUI()
+    if game.CoreGui:FindFirstChild("SimpleAimbot") then
+        ScreenGui = game.CoreGui.SimpleAimbot
+        button = ScreenGui:FindFirstChildWhichIsA("ImageButton")
+        stroke = button and button:FindFirstChildWhichIsA("UIStroke")
         return
     end
     
-    if not currentTarget then
-        currentTarget = getClosestTarget()
-    end
-    
-    if currentTarget and currentTarget.Character then
-        local root = currentTarget.Character:FindFirstChild("HumanoidRootPart")
-        if root then
-            local lookAt = CFrame.new(Camera.CFrame.Position, root.Position)
-            Camera.CFrame = Camera.CFrame:Lerp(lookAt, SMOOTHNESS)
-        else
-            currentTarget = nil
-        end
-    else
-        currentTarget = nil
-    end
-end)
-
-local button = nil
-local stroke = nil
-local ScreenGui = nil
-
-if not game.CoreGui:FindFirstChild("SimpleAimbot") then
     ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "SimpleAimbot"
     ScreenGui.Parent = game.CoreGui
@@ -113,7 +101,6 @@ if not game.CoreGui:FindFirstChild("SimpleAimbot") then
     button.ImageColor3 = Color3.fromRGB(255, 255, 255)
     button.ImageTransparency = 0.2
     button.Parent = ScreenGui
-    button.Draggable = false
 
     local corner = Instance.new("UICorner", button)
     corner.CornerRadius = UDim.new(1, 0)
@@ -157,34 +144,59 @@ if not game.CoreGui:FindFirstChild("SimpleAimbot") then
         if not dragging then
             if GetRole() == "Killer" then
                 aimbotEnabled = not aimbotEnabled
-                
                 if aimbotEnabled then
-                    button.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-                    button.BackgroundTransparency = 0.3
-                    stroke.Color = Color3.fromRGB(100, 255, 100)
                     lockMouse()
                 else
-                    button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-                    button.BackgroundTransparency = 0.15
-                    stroke.Color = Color3.fromRGB(255, 100, 100)
                     unlockMouse()
                     currentTarget = nil
                 end
+                UpdateButtonUI()
             else
+                local originalColor = button.BackgroundColor3
                 button.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
                 task.wait(0.1)
-                button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+                button.BackgroundColor3 = originalColor
             end
         end
         dragging = false
     end)
-else
-    ScreenGui = game.CoreGui.SimpleAimbot
-    button = ScreenGui:FindFirstChildWhichIsA("ImageButton")
-    stroke = button and button:FindFirstChildWhichIsA("UIStroke")
 end
 
-LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+CreateGUI()
+
+local renderConn = RunService.RenderStepped:Connect(function()
+    if not aimbotEnabled then return end
+    if GetRole() ~= "Killer" then
+        if aimbotEnabled then
+            aimbotEnabled = false
+            unlockMouse()
+            currentTarget = nil
+            UpdateButtonUI()
+        end
+        return
+    end
+    
+    if not Camera then return end
+    
+    if not currentTarget then
+        currentTarget = getClosestTarget()
+    end
+    
+    if currentTarget and currentTarget.Character then
+        local root = currentTarget.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            local lookAt = CFrame.new(Camera.CFrame.Position, root.Position)
+            Camera.CFrame = Camera.CFrame:Lerp(lookAt, SMOOTHNESS)
+        else
+            currentTarget = nil
+        end
+    else
+        currentTarget = nil
+    end
+end)
+table.insert(activeConnections, renderConn)
+
+local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
     if ScreenGui then
         if GetRole() == "Killer" then
             ScreenGui.Enabled = true
@@ -192,20 +204,17 @@ LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
             ScreenGui.Enabled = false
             if aimbotEnabled then
                 aimbotEnabled = false
-                if button then
-                    button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-                    button.BackgroundTransparency = 0.15
-                    if stroke then stroke.Color = Color3.fromRGB(255, 100, 100) end
-                end
                 unlockMouse()
                 currentTarget = nil
+                UpdateButtonUI()
             end
         end
     end
 end)
+table.insert(activeConnections, teamConn)
 
-if GetRole() == "Killer" then
+if GetRole() == "Killer" and ScreenGui then
     ScreenGui.Enabled = true
-else
+elseif ScreenGui then
     ScreenGui.Enabled = false
 end
