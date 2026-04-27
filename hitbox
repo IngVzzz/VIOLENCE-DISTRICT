@@ -1,12 +1,7 @@
--- ==========================================
--- HITBOX EXPANDER - ULTRA KENTANG
--- Beban seminimal mungkin. Support penuh.
--- ==========================================
-
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
-local HITBOX_Size = 15
+local HITBOX_Size = 16
 local OriginalHitboxSizes = {}
 local active = false
 local updateTimer = 0
@@ -65,7 +60,6 @@ local function ExpandHitbox(player)
     end
 end
 
--- Update pake timer (maks 4x per detik)
 game:GetService("RunService").RenderStepped:Connect(function(dt)
     if GetRole() ~= "Killer" then
         if active then
@@ -80,7 +74,7 @@ game:GetService("RunService").RenderStepped:Connect(function(dt)
     end
     
     updateTimer = updateTimer + dt
-    if updateTimer >= 0.25 then  -- 4x per detik
+    if updateTimer >= 0.25 then
         updateTimer = 0
         for _, p in pairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then
@@ -90,7 +84,6 @@ game:GetService("RunService").RenderStepped:Connect(function(dt)
     end
 end)
 
--- Auto reset pas ganti team
 LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
     active = false
     ResetAll()
@@ -100,7 +93,6 @@ LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
     end
 end)
 
--- Player baru join
 Players.PlayerAdded:Connect(function(p)
     p.CharacterAdded:Connect(function()
         task.wait(0.3)
@@ -108,10 +100,8 @@ Players.PlayerAdded:Connect(function(p)
     end)
 end)
 
--- Player keluar
 Players.PlayerRemoving:Connect(ResetHitbox)
 
--- Setup awal
 active = (GetRole() == "Killer")
 for _, p in pairs(Players:GetPlayers()) do
     if p ~= LocalPlayer then
