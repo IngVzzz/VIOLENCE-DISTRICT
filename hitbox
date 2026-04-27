@@ -5,6 +5,8 @@ local HITBOX_Size = 16
 local OriginalHitboxSizes = {}
 local active = false
 local updateTimer = 0
+local activeConnections = {}
+local playerCharacterConns = {}
 
 local function GetRole()
     if not LocalPlayer.Team then return "Lobby" end
@@ -21,6 +23,7 @@ local function IsSurvivor(player)
 end
 
 local function ResetHitbox(player)
+    if not player then return end
     local orig = OriginalHitboxSizes[player]
     if orig and player.Character then
         local root = player.Character:FindFirstChild("HumanoidRootPart")
@@ -34,13 +37,20 @@ end
 
 local function ResetAll()
     for p, _ in pairs(OriginalHitboxSizes) do
-        ResetHitbox(p)
+        if p and p.Character then
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            if root and OriginalHitboxSizes[p] then
+                root.Size = OriginalHitboxSizes[p]
+                root.CanCollide = true
+            end
+        end
     end
     OriginalHitboxSizes = {}
 end
 
 local function ExpandHitbox(player)
     if not active then return end
+    if not player or player == LocalPlayer then return end
     if not IsSurvivor(player) then return end
     
     local char = player.Character
@@ -60,7 +70,31 @@ local function ExpandHitbox(player)
     end
 end
 
-game:GetService("RunService").RenderStepped:Connect(function(dt)
+local function UpdateAllHitboxes()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            ExpandHitbox(p)
+        end
+    end
+end
+
+local function BindPlayerEvents(player)
+    if player == LocalPlayer then return end
+    
+    if playerCharacterConns[player] then
+        playerCharacterConns[player]:Disconnect()
+    end
+    
+    local conn = player.CharacterAdded:Connect(function()
+        task.wait(0.3)
+        ExpandHitbox(player)
+    end)
+    playerCharacterConns[player] = conn
+    table.insert(activeConnections, conn)
+end
+
+local renderConn
+renderConn = game:GetService("RunService").RenderStepped:Connect(function(dt)
     if GetRole() ~= "Killer" then
         if active then
             active = false
@@ -76,38 +110,44 @@ game:GetService("RunService").RenderStepped:Connect(function(dt)
     updateTimer = updateTimer + dt
     if updateTimer >= 0.25 then
         updateTimer = 0
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                ExpandHitbox(p)
-            end
-        end
+        UpdateAllHitboxes()
     end
 end)
+table.insert(activeConnections, renderConn)
 
-LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
     active = false
     ResetAll()
     task.wait(0.2)
     if GetRole() == "Killer" then
         active = true
+        UpdateAllHitboxes()
     end
 end)
+table.insert(activeConnections, teamConn)
 
-Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function()
-        task.wait(0.3)
-        ExpandHitbox(p)
-    end)
+local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+    BindPlayerEvents(player)
 end)
+table.insert(activeConnections, playerAddedConn)
 
-Players.PlayerRemoving:Connect(ResetHitbox)
+local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+    ResetHitbox(player)
+    if playerCharacterConns[player] then
+        playerCharacterConns[player]:Disconnect()
+        playerCharacterConns[player] = nil
+    end
+end)
+table.insert(activeConnections, playerRemovingConn)
 
-active = (GetRole() == "Killer")
 for _, p in pairs(Players:GetPlayers()) do
     if p ~= LocalPlayer then
-        task.spawn(function()
-            task.wait(0.5)
-            ExpandHitbox(p)
-        end)
+        task.wait(0.1)
+        ExpandHitbox(p)
+        BindPlayerEvents(p)
     end
+end
+
+if GetRole() == "Killer" then
+    active = true
 end
