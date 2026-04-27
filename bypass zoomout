@@ -6,7 +6,11 @@ local RunService = game:GetService("RunService")
 local Camera = nil
 local zoomLevel = 50
 local zoomSpeed = 3
-local isSetup = false
+local isActive = false
+local activeConnections = {}
+local renderConn = nil
+local maxZoomDistConn = nil
+local inputConn = nil
 
 local function GetRole()
     if not LocalPlayer.Team then return "Unknown" end
@@ -25,65 +29,116 @@ local function getCamera()
     return false
 end
 
-local function setup()
-    if isSetup then return end
+local function cleanupConnections()
+    for _, conn in pairs(activeConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    activeConnections = {}
+end
+
+local function disableZoom()
+    if not isActive then return end
+    isActive = false
+    
+    if renderConn then
+        renderConn:Disconnect()
+        renderConn = nil
+    end
+    
+    if Camera then
+        Camera.FieldOfView = 70
+    end
+    zoomLevel = 50
+    
+    if LocalPlayer then
+        pcall(function()
+            LocalPlayer.CameraMaxZoomDistance = 40
+        end)
+    end
+end
+
+local function enableZoom()
+    if isActive then return end
     if not getCamera() then
         task.wait(0.5)
-        setup()
+        if GetRole() == "Survivor" then
+            enableZoom()
+        end
         return
     end
     
-    isSetup = true  
+    isActive = true
+    zoomLevel = Camera.FieldOfView
     
-    LocalPlayer.CameraMaxZoomDistance = 40
-    LocalPlayer.CameraMinZoomDistance = 8
-    
-    LocalPlayer:GetPropertyChangedSignal("CameraMaxZoomDistance"):Connect(function()
-        if GetRole() == "Survivor" then
-            if LocalPlayer.CameraMaxZoomDistance < 50 then
-                LocalPlayer.CameraMaxZoomDistance = 50
-            end
-        end
+    pcall(function()
+        LocalPlayer.CameraMaxZoomDistance = 40
+        LocalPlayer.CameraMinZoomDistance = 8
     end)
     
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if maxZoomDistConn then
+        maxZoomDistConn:Disconnect()
+    end
+    
+    maxZoomDistConn = LocalPlayer:GetPropertyChangedSignal("CameraMaxZoomDistance"):Connect(function()
+        if GetRole() == "Survivor" and LocalPlayer.CameraMaxZoomDistance < 50 then
+            LocalPlayer.CameraMaxZoomDistance = 50
+        end
+    end)
+    table.insert(activeConnections, maxZoomDistConn)
+    
+    if inputConn then
+        inputConn:Disconnect()
+    end
+    
+    inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         if GetRole() ~= "Survivor" then return end
-        if input.UserInputType == Enum.UserInputType.MouseWheel and Camera then
+        if not Camera then return end
+        if input.UserInputType == Enum.UserInputType.MouseWheel then
             zoomLevel = zoomLevel - (input.Position.Z * zoomSpeed)
             zoomLevel = math.clamp(zoomLevel, 20, 120)
             Camera.FieldOfView = zoomLevel
         end
     end)
+    table.insert(activeConnections, inputConn)
     
-    RunService.RenderStepped:Connect(function()
-        if GetRole() == "Survivor" then
-            if Camera and Camera.FieldOfView ~= zoomLevel then
-                Camera.FieldOfView = zoomLevel
+    if renderConn then
+        renderConn:Disconnect()
+    end
+    
+    renderConn = RunService.RenderStepped:Connect(function()
+        if GetRole() ~= "Survivor" then
+            if isActive then
+                disableZoom()
             end
+            return
+        end
+        if not Camera then
+            getCamera()
+            return
+        end
+        if Camera.FieldOfView ~= zoomLevel then
+            Camera.FieldOfView = zoomLevel
+        end
+        pcall(function()
             if LocalPlayer.CameraMaxZoomDistance ~= 50 then
                 LocalPlayer.CameraMaxZoomDistance = 50
             end
-        end
+        end)
     end)
 end
 
 local function onRoleChanged()
     if GetRole() == "Survivor" then
-        if not isSetup then
-            setup()
-        end
+        enableZoom()
     else
-        isSetup = false
-        if Camera then
-            Camera.FieldOfView = 70
-        end
-        zoomLevel = 50
+        disableZoom()
+        cleanupConnections()
     end
 end
 
 LocalPlayer:GetPropertyChangedSignal("Team"):Connect(onRoleChanged)
 
 if GetRole() == "Survivor" then
-    setup()
+    enableZoom()
 end
