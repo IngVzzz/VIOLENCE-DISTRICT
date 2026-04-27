@@ -7,6 +7,17 @@ local destroyedRemotes = {
     Generator = false
 }
 
+local activeConnections = {}
+
+local function waitForInstance(parent, name, timeout)
+    timeout = timeout or 3
+    local start = tick()
+    while not parent:FindFirstChild(name) and tick() - start < timeout do
+        task.wait(0.1)
+    end
+    return parent:FindFirstChild(name)
+end
+
 local function DisableSkillCheckEvent(folderName)
     local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
     if not Remotes then return false end
@@ -34,54 +45,94 @@ local function WatchFolder(folderName)
     local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
     if not Remotes then return end
 
-    local targetFolder = Remotes:FindFirstChild(folderName)
+    local targetFolder = waitForInstance(Remotes, folderName, 2)
     if not targetFolder then return end
 
     local existing = targetFolder:FindFirstChild("SkillCheckEvent")
-    if existing then existing:Destroy() end
+    if existing then 
+        existing:Destroy() 
+    end
 
-    local conn
-    conn = targetFolder.ChildAdded:Connect(function(child)
+    local conn = targetFolder.ChildAdded:Connect(function(child)
         if child.Name == "SkillCheckEvent" then
             child:Destroy()
             destroyedRemotes[folderName] = true
         end
     end)
+    
+    table.insert(activeConnections, conn)
 
-    targetFolder.AncestryChanged:Connect(function()
+    local ancestryConn
+    ancestryConn = targetFolder.AncestryChanged:Connect(function()
         if not targetFolder.Parent then
             conn:Disconnect()
+            if ancestryConn then ancestryConn:Disconnect() end
+            for i, v in ipairs(activeConnections) do
+                if v == conn or v == ancestryConn then
+                    table.remove(activeConnections, i)
+                    break
+                end
+            end
         end
     end)
+    table.insert(activeConnections, ancestryConn)
 end
 
 local function WatchRemotesFolder()
-    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
-    if not Remotes then return end
-
     local function AddWatcher(folderName)
-        if Remotes:FindFirstChild(folderName) then
-            WatchFolder(folderName)
+        local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if Remotes then
+            local target = waitForInstance(Remotes, folderName, 1.5)
+            if target then
+                WatchFolder(folderName)
+            end
         end
     end
 
     AddWatcher("Healing")
     AddWatcher("Generator")
 
-    Remotes.ChildAdded:Connect(function(child)
-        if child.Name == "Healing" or child.Name == "Generator" then
-            task.wait(0.1)
-            WatchFolder(child.Name)
-            DisableSkillCheckEvent(child.Name)
+    local remotesConn = ReplicatedStorage.ChildAdded:Connect(function(child)
+        if child.Name == "Remotes" then
+            task.wait(0.2)
+            AddWatcher("Healing")
+            AddWatcher("Generator")
         end
     end)
+    table.insert(activeConnections, remotesConn)
+
+    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if remotes then
+        local childAddedConn = remotes.ChildAdded:Connect(function(child)
+            if child.Name == "Healing" or child.Name == "Generator" then
+                task.wait(0.2)
+                WatchFolder(child.Name)
+                DisableSkillCheckEvent(child.Name)
+            end
+        end)
+        table.insert(activeConnections, childAddedConn)
+    end
 end
 
+local function SafeDestroyOnRespawn()
+    local success, err = pcall(function()
+        local Remotes = waitForInstance(ReplicatedStorage, "Remotes", 2)
+        if Remotes then
+            DestroyBoth()
+            WatchRemotesFolder()
+        end
+    end)
+    if not success then
+        task.wait(0.5)
+        SafeDestroyOnRespawn()
+    end
+end
 
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(0.5)
-    DestroyBoth()
+local charConn
+charConn = LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.3)
+    SafeDestroyOnRespawn()
 end)
+table.insert(activeConnections, charConn)
 
-WatchRemotesFolder()
-DestroyBoth()
+SafeDestroyOnRespawn()
