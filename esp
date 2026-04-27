@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
 local localPlayer = Players.LocalPlayer
 
 local Hook = {
@@ -10,7 +11,23 @@ local Hook = {
 
 local isActive = false
 local activeConnections = {}
-local currentHighlights = {}
+local playerConnections = {}  -- Track per-player connections
+
+local function safeDisconnect(conn)
+    pcall(function() if conn then conn:Disconnect() end end)
+end
+
+local function clearAllConnections()
+    for _, conn in pairs(activeConnections) do
+        safeDisconnect(conn)
+    end
+    activeConnections = {}
+    
+    for player, conn in pairs(playerConnections) do
+        safeDisconnect(conn)
+    end
+    playerConnections = {}
+end
 
 local function GetLocalRole()
     if not localPlayer.Team then return "Lobby" end
@@ -22,53 +39,63 @@ end
 
 local function RemoveHighlight(char)
     if not char then return end
-    local h = char:FindFirstChild("ESP_Highlight")
-    if h then 
-        h:Destroy()
-        currentHighlights[char] = nil
-    end
+    pcall(function()
+        local h = char:FindFirstChild("ESP_Highlight")
+        if h then 
+            h:Destroy()
+        end
+    end)
 end
 
 local function ApplyHighlight(char, color)
-    if not char then return end
+    if not char or not color then return end
     
-    local existing = char:FindFirstChild("ESP_Highlight")
-    if existing and existing.FillColor == color then
-        return
+    pcall(function()
+        local existing = char:FindFirstChild("ESP_Highlight")
+        if existing and existing.FillColor == color then
+            return
+        end
+        
+        RemoveHighlight(char)
+        
+        local h = Instance.new("Highlight")
+        h.Name = "ESP_Highlight"
+        h.FillColor = color
+        h.OutlineColor = color
+        h.FillTransparency = 0.8
+        h.OutlineTransparency = 0.3
+        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        h.Parent = char
+    end)
+end
+
+local function UpdateSinglePlayer(player)
+    if not isActive then return end
+    if player == localPlayer then return end
+    if not player.Character or not player.Team then return end
+    
+    local teamName = player.Team.Name
+    local color = nil
+    
+    if teamName == "Killer" and Hook.Players["Killer"].On then
+        color = Hook.Players["Killer"].Color
+    elseif teamName == "Survivors" and Hook.Players["Survivor"].On then
+        color = Hook.Players["Survivor"].Color
     end
     
-    RemoveHighlight(char)
-    
-    local h = Instance.new("Highlight")
-    h.Name = "ESP_Highlight"
-    h.FillColor = color
-    h.OutlineColor = color
-    h.FillTransparency = 0.8
-    h.OutlineTransparency = 0.3
-    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    h.Parent = char
-    currentHighlights[char] = h
+    if color then
+        ApplyHighlight(player.Character, color)
+    else
+        RemoveHighlight(player.Character)
+    end
 end
 
 local function UpdateAllHighlights()
     if not isActive then return end
     
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= localPlayer and p.Character then
-            local teamName = p.Team and p.Team.Name
-            local color = nil
-            
-            if teamName == "Killer" and Hook.Players["Killer"].On then
-                color = Hook.Players["Killer"].Color
-            elseif teamName == "Survivors" and Hook.Players["Survivor"].On then
-                color = Hook.Players["Survivor"].Color
-            end
-            
-            if color then
-                ApplyHighlight(p.Character, color)
-            else
-                RemoveHighlight(p.Character)
-            end
+        if p ~= localPlayer then
+            UpdateSinglePlayer(p)
         end
     end
 end
@@ -99,35 +126,64 @@ end
 local function BindPlayerEvents(player)
     if player == localPlayer then return end
     
+    -- Bersihin koneksi lama kalo ada
+    if playerConnections[player] then
+        safeDisconnect(playerConnections[player])
+        playerConnections[player] = nil
+    end
+    
     local conn = player.CharacterAdded:Connect(function()
         task.wait(0.3)
         if isActive then
-            UpdateAllHighlights()
+            UpdateSinglePlayer(player)  -- Update cuma player ini, bukan semua!
         end
     end)
+    playerConnections[player] = conn
     table.insert(activeConnections, conn)
 end
 
-localPlayer:GetPropertyChangedSignal("Team"):Connect(CheckAndToggle)
-
-local charConn = localPlayer.CharacterAdded:Connect(function()
-    task.wait(0.5)
-    CheckAndToggle()
-end)
-table.insert(activeConnections, charConn)
-
-local playerAddedConn = Players.PlayerAdded:Connect(function(player)
-    BindPlayerEvents(player)
-end)
-table.insert(activeConnections, playerAddedConn)
-
-local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
-    if player.Character then RemoveHighlight(player.Character) end
-end)
-table.insert(activeConnections, playerRemovingConn)
-
-for _, p in pairs(Players:GetPlayers()) do
-    BindPlayerEvents(p)
+local function setupConnections()
+    clearAllConnections()
+    
+    -- Team change
+    local teamConn = localPlayer:GetPropertyChangedSignal("Team"):Connect(CheckAndToggle)
+    table.insert(activeConnections, teamConn)
+    
+    -- Local character added
+    local charConn = localPlayer.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        CheckAndToggle()
+    end)
+    table.insert(activeConnections, charConn)
+    
+    -- Player added
+    local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+        BindPlayerEvents(player)
+    end)
+    table.insert(activeConnections, playerAddedConn)
+    
+    -- Player removing
+    local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+        if player.Character then RemoveHighlight(player.Character) end
+        if playerConnections[player] then
+            safeDisconnect(playerConnections[player])
+            playerConnections[player] = nil
+        end
+    end)
+    table.insert(activeConnections, playerRemovingConn)
 end
 
-CheckAndToggle()
+local function initialize()
+    setupConnections()
+    
+    -- Bind existing players
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= localPlayer then
+            BindPlayerEvents(p)
+        end
+    end
+    
+    CheckAndToggle()
+end
+
+initialize()
