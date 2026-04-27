@@ -8,14 +8,18 @@ local destroyedRemotes = {
 }
 
 local activeConnections = {}
+local retryCount = 0
+local MAX_RETRIES = 10
 
-local function waitForInstance(parent, name, timeout)
-    timeout = timeout or 3
-    local start = tick()
-    while not parent:FindFirstChild(name) and tick() - start < timeout do
-        task.wait(0.1)
+local function safeDisconnect(conn)
+    pcall(function() if conn then conn:Disconnect() end end)
+end
+
+local function clearAllConnections()
+    for _, conn in pairs(activeConnections) do
+        safeDisconnect(conn)
     end
-    return parent:FindFirstChild(name)
+    activeConnections = {}
 end
 
 local function DisableSkillCheckEvent(folderName)
@@ -27,7 +31,7 @@ local function DisableSkillCheckEvent(folderName)
 
     local SkillCheckEvent = targetFolder:FindFirstChild("SkillCheckEvent")
     if SkillCheckEvent then
-        SkillCheckEvent:Destroy()
+        pcall(function() SkillCheckEvent:Destroy() end)
     end
 
     destroyedRemotes[folderName] = true
@@ -45,32 +49,31 @@ local function WatchFolder(folderName)
     local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
     if not Remotes then return end
 
-    local targetFolder = waitForInstance(Remotes, folderName, 2)
+    local targetFolder = Remotes:FindFirstChild(folderName)
     if not targetFolder then return end
 
     local existing = targetFolder:FindFirstChild("SkillCheckEvent")
     if existing then 
-        existing:Destroy() 
+        pcall(function() existing:Destroy() end)
     end
 
-    local conn = targetFolder.ChildAdded:Connect(function(child)
+    local childConn = targetFolder.ChildAdded:Connect(function(child)
         if child.Name == "SkillCheckEvent" then
-            child:Destroy()
+            pcall(function() child:Destroy() end)
             destroyedRemotes[folderName] = true
         end
     end)
-    
-    table.insert(activeConnections, conn)
+    table.insert(activeConnections, childConn)
 
     local ancestryConn
     ancestryConn = targetFolder.AncestryChanged:Connect(function()
         if not targetFolder.Parent then
-            conn:Disconnect()
-            if ancestryConn then ancestryConn:Disconnect() end
-            for i, v in ipairs(activeConnections) do
-                if v == conn or v == ancestryConn then
+            safeDisconnect(childConn)
+            safeDisconnect(ancestryConn)
+            -- Hapus dari array
+            for i = #activeConnections, 1, -1 do
+                if activeConnections[i] == childConn or activeConnections[i] == ancestryConn then
                     table.remove(activeConnections, i)
-                    break
                 end
             end
         end
@@ -79,60 +82,79 @@ local function WatchFolder(folderName)
 end
 
 local function WatchRemotesFolder()
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then return end
+
     local function AddWatcher(folderName)
-        local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
-        if Remotes then
-            local target = waitForInstance(Remotes, folderName, 1.5)
-            if target then
-                WatchFolder(folderName)
-            end
+        local target = Remotes:FindFirstChild(folderName)
+        if target then
+            WatchFolder(folderName)
         end
     end
 
     AddWatcher("Healing")
     AddWatcher("Generator")
 
-    local remotesConn = ReplicatedStorage.ChildAdded:Connect(function(child)
+    local remotesChildConn = Remotes.ChildAdded:Connect(function(child)
+        if child.Name == "Healing" or child.Name == "Generator" then
+            task.wait(0.1)
+            WatchFolder(child.Name)
+            DisableSkillCheckEvent(child.Name)
+        end
+    end)
+    table.insert(activeConnections, remotesChildConn)
+end
+
+local function SetupWatchers()
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if Remotes then
+        DestroyBoth()
+        WatchRemotesFolder()
+        return true
+    end
+    return false
+end
+
+-- With retry limit, NO recursion
+local function SafeDestroyOnRespawn(attempt)
+    attempt = attempt or 1
+    
+    if attempt > MAX_RETRIES then
+        return -- Gagal setelah X percobaan, berhenti
+    end
+    
+    local success = pcall(SetupWatchers)
+    
+    if not success and attempt < MAX_RETRIES then
+        task.wait(0.5)
+        SafeDestroyOnRespawn(attempt + 1)
+    end
+end
+
+-- Watch for Remotes folder to be created later
+local function watchForRemotesFolder()
+    local remotesFolderConn = ReplicatedStorage.ChildAdded:Connect(function(child)
         if child.Name == "Remotes" then
             task.wait(0.2)
-            AddWatcher("Healing")
-            AddWatcher("Generator")
+            SafeDestroyOnRespawn(1)
         end
     end)
-    table.insert(activeConnections, remotesConn)
-
-    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-    if remotes then
-        local childAddedConn = remotes.ChildAdded:Connect(function(child)
-            if child.Name == "Healing" or child.Name == "Generator" then
-                task.wait(0.2)
-                WatchFolder(child.Name)
-                DisableSkillCheckEvent(child.Name)
-            end
-        end)
-        table.insert(activeConnections, childAddedConn)
-    end
+    table.insert(activeConnections, remotesFolderConn)
 end
 
-local function SafeDestroyOnRespawn()
-    local success, err = pcall(function()
-        local Remotes = waitForInstance(ReplicatedStorage, "Remotes", 2)
-        if Remotes then
-            DestroyBoth()
-            WatchRemotesFolder()
-        end
-    end)
-    if not success then
-        task.wait(0.5)
-        SafeDestroyOnRespawn()
-    end
-end
-
-local charConn
-charConn = LocalPlayer.CharacterAdded:Connect(function()
+-- Character respawn handler
+local charConn = LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.3)
-    SafeDestroyOnRespawn()
+    SafeDestroyOnRespawn(1)
 end)
 table.insert(activeConnections, charConn)
 
-SafeDestroyOnRespawn()
+-- Initial setup
+local function initialize()
+    clearAllConnections() -- Bersihin koneksi lama dari sebelumnya
+    activeConnections = {}
+    watchForRemotesFolder()
+    SafeDestroyOnRespawn(1)
+end
+
+initialize()
