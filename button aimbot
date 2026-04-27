@@ -1,6 +1,7 @@
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -8,10 +9,30 @@ local aimbotEnabled = false
 local currentTarget = nil
 local maxLockDistance = 35
 local SMOOTHNESS = 0.85
+
+-- Event management
 local activeConnections = {}
+local uiConnections = {}
 local button = nil
 local stroke = nil
 local ScreenGui = nil
+local lastTargetUpdate = 0
+local renderConnection = nil
+
+local function cleanUIEvents()
+    for _, conn in pairs(uiConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    uiConnections = {}
+end
+
+local function cleanAllEvents()
+    for _, conn in pairs(activeConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    activeConnections = {}
+    cleanUIEvents()
+end
 
 local function GetRole()
     if not LocalPlayer.Team then return "Lobby" end
@@ -22,13 +43,17 @@ local function GetRole()
 end
 
 local function lockMouse()
-    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-    UserInputService.MouseIconEnabled = false
+    pcall(function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        UserInputService.MouseIconEnabled = false
+    end)
 end
 
 local function unlockMouse()
-    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-    UserInputService.MouseIconEnabled = true
+    pcall(function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        UserInputService.MouseIconEnabled = true
+    end)
 end
 
 local function getClosestTarget()
@@ -68,28 +93,32 @@ end
 
 local function UpdateButtonUI()
     if not button then return end
-    if aimbotEnabled then
-        button.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-        button.BackgroundTransparency = 0.3
-        if stroke then stroke.Color = Color3.fromRGB(100, 255, 100) end
-    else
-        button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-        button.BackgroundTransparency = 0.15
-        if stroke then stroke.Color = Color3.fromRGB(255, 100, 100) end
-    end
+    pcall(function()
+        if aimbotEnabled then
+            button.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+            button.BackgroundTransparency = 0.3
+            if stroke then stroke.Color = Color3.fromRGB(100, 255, 100) end
+        else
+            button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+            button.BackgroundTransparency = 0.15
+            if stroke then stroke.Color = Color3.fromRGB(255, 100, 100) end
+        end
+    end)
 end
 
 local function CreateGUI()
-    if game.CoreGui:FindFirstChild("SimpleAimbot") then
-        ScreenGui = game.CoreGui.SimpleAimbot
-        button = ScreenGui:FindFirstChildWhichIsA("ImageButton")
-        stroke = button and button:FindFirstChildWhichIsA("UIStroke")
-        return
+    -- Cleanup existing GUI events first
+    cleanUIEvents()
+    
+    -- Remove existing GUI completely to avoid event pileup
+    local existingGui = CoreGui:FindFirstChild("SimpleAimbot")
+    if existingGui then
+        pcall(function() existingGui:Destroy() end)
     end
     
     ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "SimpleAimbot"
-    ScreenGui.Parent = game.CoreGui
+    ScreenGui.Parent = CoreGui
 
     button = Instance.new("ImageButton")
     button.Size = UDim2.new(0, 50, 0, 50)
@@ -114,21 +143,23 @@ local function CreateGUI()
     local dragStart = nil
     local startPos = nil
 
-    button.InputBegan:Connect(function(input)
+    local beganConn = button.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
             dragStart = input.Position
             startPos = button.Position
         end
     end)
+    table.insert(uiConnections, beganConn)
 
-    button.InputEnded:Connect(function(input)
+    local endedConn = button.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = false
         end
     end)
+    table.insert(uiConnections, endedConn)
 
-    button.InputChanged:Connect(function(input)
+    local changedConn = button.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local delta = input.Position - dragStart
             button.Position = UDim2.new(
@@ -139,82 +170,135 @@ local function CreateGUI()
             )
         end
     end)
+    table.insert(uiConnections, changedConn)
 
-    button.MouseButton1Click:Connect(function()
-        if not dragging then
-            if GetRole() == "Killer" then
-                aimbotEnabled = not aimbotEnabled
-                if aimbotEnabled then
-                    lockMouse()
-                else
-                    unlockMouse()
-                    currentTarget = nil
-                end
-                UpdateButtonUI()
-            else
-                local originalColor = button.BackgroundColor3
-                button.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-                task.wait(0.1)
-                button.BackgroundColor3 = originalColor
-            end
+    local clickConn = button.MouseButton1Click:Connect(function()
+        if dragging then
+            dragging = false
+            return
         end
-        dragging = false
+        
+        if GetRole() == "Killer" then
+            aimbotEnabled = not aimbotEnabled
+            if aimbotEnabled then
+                lockMouse()
+                currentTarget = getClosestTarget()
+            else
+                unlockMouse()
+                currentTarget = nil
+            end
+            UpdateButtonUI()
+        else
+            local originalColor = button.BackgroundColor3
+            button.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+            task.wait(0.1)
+            button.BackgroundColor3 = originalColor
+        end
     end)
+    table.insert(uiConnections, clickConn)
 end
 
-CreateGUI()
-
-local renderConn = RunService.RenderStepped:Connect(function()
-    if not aimbotEnabled then return end
-    if GetRole() ~= "Killer" then
-        if aimbotEnabled then
-            aimbotEnabled = false
-            unlockMouse()
-            currentTarget = nil
-            UpdateButtonUI()
-        end
-        return
-    end
-    
-    if not Camera then return end
-    
-    if not currentTarget then
-        currentTarget = getClosestTarget()
-    end
-    
-    if currentTarget and currentTarget.Character then
-        local root = currentTarget.Character:FindFirstChild("HumanoidRootPart")
-        if root then
-            local lookAt = CFrame.new(Camera.CFrame.Position, root.Position)
-            Camera.CFrame = Camera.CFrame:Lerp(lookAt, SMOOTHNESS)
-        else
-            currentTarget = nil
-        end
-    else
+-- Optimized target update (periodically, not every frame)
+local function updateTargetOptimized()
+    if not aimbotEnabled then 
         currentTarget = nil
+        return 
     end
-end)
-table.insert(activeConnections, renderConn)
+    currentTarget = getClosestTarget()
+end
 
-local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
-    if ScreenGui then
-        if GetRole() == "Killer" then
-            ScreenGui.Enabled = true
-        else
-            ScreenGui.Enabled = false
+-- Setup render with periodic target scan
+local function setupRenderStepped()
+    if renderConnection then 
+        renderConnection:Disconnect() 
+    end
+    
+    renderConnection = RunService.RenderStepped:Connect(function()
+        if not aimbotEnabled then return end
+        
+        if GetRole() ~= "Killer" then
             if aimbotEnabled then
                 aimbotEnabled = false
                 unlockMouse()
                 currentTarget = nil
                 UpdateButtonUI()
             end
+            return
         end
-    end
-end)
-table.insert(activeConnections, teamConn)
-
-if GetRole() == "Killer" and ScreenGui then
-    ScreenGui.Enabled = true
-elseif ScreenGui then
-    ScreenGui.Enabled = false
+        
+        if not Camera then return end
+        
+        -- Update target periodically (every ~0.1 seconds)
+        local now = tick()
+        if now - lastTargetUpdate >= 0.1 then
+            lastTargetUpdate = now
+            if not currentTarget then
+                currentTarget = getClosestTarget()
+            elseif currentTarget and (not currentTarget.Character or not currentTarget.Character:FindFirstChild("HumanoidRootPart")) then
+                currentTarget = getClosestTarget()
+            end
+        end
+        
+        if currentTarget and currentTarget.Character then
+            local root = currentTarget.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local lookAt = CFrame.new(Camera.CFrame.Position, root.Position)
+                Camera.CFrame = Camera.CFrame:Lerp(lookAt, SMOOTHNESS)
+            else
+                currentTarget = nil
+            end
+        else
+            currentTarget = nil
+        end
+    end)
+    table.insert(activeConnections, renderConnection)
 end
+
+-- Handle camera changes
+local function setupCameraHandler()
+    local cameraConn = workspace.Changed:Connect(function()
+        if workspace.CurrentCamera then
+            Camera = workspace.CurrentCamera
+        end
+    end)
+    table.insert(activeConnections, cameraConn)
+end
+
+-- Setup team handler
+local function setupTeamHandler()
+    local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+        if ScreenGui then
+            if GetRole() == "Killer" then
+                ScreenGui.Enabled = true
+            else
+                ScreenGui.Enabled = false
+                if aimbotEnabled then
+                    aimbotEnabled = false
+                    unlockMouse()
+                    currentTarget = nil
+                    UpdateButtonUI()
+                end
+            end
+        end
+    end)
+    table.insert(activeConnections, teamConn)
+end
+
+-- Initialize
+local function initialize()
+    -- Update camera reference
+    Camera = workspace.CurrentCamera
+    
+    CreateGUI()
+    setupRenderStepped()
+    setupCameraHandler()
+    setupTeamHandler()
+    
+    if GetRole() == "Killer" and ScreenGui then
+        ScreenGui.Enabled = true
+    elseif ScreenGui then
+        ScreenGui.Enabled = false
+    end
+end
+
+initialize()
