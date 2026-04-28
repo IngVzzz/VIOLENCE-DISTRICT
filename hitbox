@@ -2,7 +2,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
-local HITBOX_Size = 16
+local HITBOX_Size = 28
 local OriginalHitboxSizes = {}
 local active = false
 local updateTimer = 0
