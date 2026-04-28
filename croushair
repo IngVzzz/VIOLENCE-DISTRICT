@@ -10,7 +10,7 @@ crosshairGui.Parent = playerGui
 
 local dot = Instance.new("Frame")
 dot.Name = "Dot"
-dot.Size = UDim2.new(0, 5, 0, 5)
+dot.Size = UDim2.new(0, 3, 0, 3)
 dot.Position = UDim2.new(0.5, 0, 0.5, 0)
 dot.AnchorPoint = Vector2.new(0.5, 0.5)
 dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
