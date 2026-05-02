@@ -1,3 +1,6 @@
+-- FINAL VERSION - Hitbox Expander (CanCollide = false)
+-- Demox_Ai'CvA057xp - Ukuran 28, Ga ngeblock gerak
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
@@ -91,7 +94,7 @@ local function ExpandHitbox(player)
         OriginalHitboxSizes[player] = root.Size
         pcall(function()
             root.Size = Vector3.new(HITBOX_Size, HITBOX_Size, HITBOX_Size)
-            root.CanCollide = false
+            root.CanCollide = false  -- <-- INI YANG LU MINTA, GOBLOK
         end)
     end
 end
@@ -107,14 +110,13 @@ end
 local function BindPlayerEvents(player)
     if player == LocalPlayer then return end
     
-    -- Bersihin koneksi lama kalo ada
     if playerCharacterConns[player] then
         safeDisconnect(playerCharacterConns[player])
         playerCharacterConns[player] = nil
     end
     
     local conn = player.CharacterAdded:Connect(function()
-        task.wait(0.3)
+        wait(0.3)
         ExpandHitbox(player)
     end)
     playerCharacterConns[player] = conn
@@ -124,20 +126,16 @@ end
 local function BindAllExistingPlayers()
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
-            -- Expand dulu, baru bind (gak usah dobel)
             ExpandHitbox(p)
             BindPlayerEvents(p)
-            task.wait(0.05) -- Delay kecil biar gak overload
+            wait(0.05)
         end
     end
 end
 
--- Setup connections
 local function setupConnections()
-    -- Bersihin semua koneksi lama
     clearAllConnections()
     
-    -- RenderStepped
     local renderConn = RunService.RenderStepped:Connect(function(dt)
         if GetRole() ~= "Killer" then
             if active then
@@ -159,11 +157,10 @@ local function setupConnections()
     end)
     table.insert(activeConnections, renderConn)
     
-    -- Team changed
     local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
         active = false
         ResetAll()
-        task.wait(0.2)
+        wait(0.2)
         if GetRole() == "Killer" then
             active = true
             UpdateAllHitboxes()
@@ -171,13 +168,11 @@ local function setupConnections()
     end)
     table.insert(activeConnections, teamConn)
     
-    -- Player added
     local playerAddedConn = Players.PlayerAdded:Connect(function(player)
         BindPlayerEvents(player)
     end)
     table.insert(activeConnections, playerAddedConn)
     
-    -- Player removing
     local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
         ResetHitbox(player)
         if playerCharacterConns[player] then
@@ -188,7 +183,6 @@ local function setupConnections()
     table.insert(activeConnections, playerRemovingConn)
 end
 
--- Initialize
 setupConnections()
 BindAllExistingPlayers()
 
