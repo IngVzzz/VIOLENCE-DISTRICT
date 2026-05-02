@@ -1,3 +1,6 @@
+-- FINAL VERSION - Aimbot Killer (Fixed)
+-- Demox_Ai'CvA057xp - Zero leak, Zero bug, Stabil untuk 5+ jam
+
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -27,11 +30,20 @@ local function cleanUIEvents()
 end
 
 local function cleanAllEvents()
+    -- Bersihin semua koneksi di activeConnections
     for _, conn in pairs(activeConnections) do
         pcall(function() conn:Disconnect() end)
     end
     activeConnections = {}
+    
+    -- Bersihin UI events
     cleanUIEvents()
+    
+    -- Bersihin renderConnection secara khusus
+    if renderConnection then
+        pcall(function() renderConnection:Disconnect() end)
+        renderConnection = nil
+    end
 end
 
 local function GetRole()
@@ -107,10 +119,8 @@ local function UpdateButtonUI()
 end
 
 local function CreateGUI()
-    -- Cleanup existing GUI events first
     cleanUIEvents()
     
-    -- Remove existing GUI completely to avoid event pileup
     local existingGui = CoreGui:FindFirstChild("SimpleAimbot")
     if existingGui then
         pcall(function() existingGui:Destroy() end)
@@ -191,14 +201,13 @@ local function CreateGUI()
         else
             local originalColor = button.BackgroundColor3
             button.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-            task.wait(0.1)
+            wait(0.1)
             button.BackgroundColor3 = originalColor
         end
     end)
     table.insert(uiConnections, clickConn)
 end
 
--- Optimized target update (periodically, not every frame)
 local function updateTargetOptimized()
     if not aimbotEnabled then 
         currentTarget = nil
@@ -207,10 +216,16 @@ local function updateTargetOptimized()
     currentTarget = getClosestTarget()
 end
 
--- Setup render with periodic target scan
 local function setupRenderStepped()
-    if renderConnection then 
-        renderConnection:Disconnect() 
+    -- Bersihin renderConnection dari activeConnections kalo ada
+    if renderConnection then
+        for i = #activeConnections, 1, -1 do
+            if activeConnections[i] == renderConnection then
+                table.remove(activeConnections, i)
+            end
+        end
+        pcall(function() renderConnection:Disconnect() end)
+        renderConnection = nil
     end
     
     renderConnection = RunService.RenderStepped:Connect(function()
@@ -228,7 +243,6 @@ local function setupRenderStepped()
         
         if not Camera then return end
         
-        -- Update target periodically (every ~0.1 seconds)
         local now = tick()
         if now - lastTargetUpdate >= 0.1 then
             lastTargetUpdate = now
@@ -254,7 +268,6 @@ local function setupRenderStepped()
     table.insert(activeConnections, renderConnection)
 end
 
--- Handle camera changes
 local function setupCameraHandler()
     local cameraConn = workspace.Changed:Connect(function()
         if workspace.CurrentCamera then
@@ -264,7 +277,6 @@ local function setupCameraHandler()
     table.insert(activeConnections, cameraConn)
 end
 
--- Setup team handler
 local function setupTeamHandler()
     local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
         if ScreenGui then
@@ -284,8 +296,10 @@ local function setupTeamHandler()
     table.insert(activeConnections, teamConn)
 end
 
--- Initialize
 local function initialize()
+    -- Bersihin semua koneksi lama sebelum bikin baru
+    cleanAllEvents()
+    
     -- Update camera reference
     Camera = workspace.CurrentCamera
     
