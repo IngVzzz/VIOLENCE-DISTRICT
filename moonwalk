@@ -20,7 +20,6 @@ local maxTurn = 40
 local turnSpeed = 850
 local returnSpeed = 800
 
--- Event management
 local activeConnections = {}
 local buttonConnections = {}
 local lastCharCheck = 0
@@ -112,7 +111,6 @@ local function createGUI()
         destroyGUI()
     end
     
-    -- Bersihin event button lama dari GUI sebelumnya
     clearButtonEvents()
     
     local gui = Instance.new("ScreenGui")
@@ -132,7 +130,6 @@ local function createGUI()
     button.BorderSizePixel = 0
     button.Parent = gui
     
-    -- Semua event button masuk ke buttonConnections
     local mouseDownConn = button.MouseButton1Down:Connect(enableMoonwalk)
     table.insert(buttonConnections, mouseDownConn)
     
@@ -154,7 +151,6 @@ local function clearAllEvents()
     clearButtonEvents()
 end
 
--- Bersihin event lama sebelum bikin baru
 clearAllEvents()
 
 local touchMovedConn = UIS.TouchMoved:Connect(function(input)
@@ -177,7 +173,6 @@ local touchEndedConn = UIS.TouchEnded:Connect(function()
 end)
 table.insert(activeConnections, touchEndedConn)
 
--- RenderStepped dengan optimasi (updateCharacterRefs gak dipanggil tiap frame)
 local renderConn = RunService.RenderStepped:Connect(function(dt)
     if not moonwalk then return end
     if GetRole() ~= "Survivor" then
@@ -185,7 +180,6 @@ local renderConn = RunService.RenderStepped:Connect(function(dt)
         return
     end
     
-    -- Cek karakter periodically (setiap ~0.5 detik), bukan tiap frame
     local now = tick()
     if now - lastCharCheck >= 0.5 then
         lastCharCheck = now
@@ -233,7 +227,6 @@ table.insert(activeConnections, charAddedConn)
 local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
     if GetRole() == "Survivor" then
         createGUI()
-        -- Hapus disableMoonwalk() karena gak masuk akal pas jadi Survivor
     else
         destroyGUI()
         if moonwalk then
@@ -243,6 +236,5 @@ local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
 end)
 table.insert(activeConnections, teamConn)
 
--- Initial setup
 updateCharacterRefs()
 createGUI()
