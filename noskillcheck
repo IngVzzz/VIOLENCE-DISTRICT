@@ -70,7 +70,6 @@ local function WatchFolder(folderName)
         if not targetFolder.Parent then
             safeDisconnect(childConn)
             safeDisconnect(ancestryConn)
-            -- Hapus dari array
             for i = #activeConnections, 1, -1 do
                 if activeConnections[i] == childConn or activeConnections[i] == ancestryConn then
                     table.remove(activeConnections, i)
@@ -115,12 +114,11 @@ local function SetupWatchers()
     return false
 end
 
--- With retry limit, NO recursion
 local function SafeDestroyOnRespawn(attempt)
     attempt = attempt or 1
     
     if attempt > MAX_RETRIES then
-        return -- Gagal setelah X percobaan, berhenti
+        return
     end
     
     local success = pcall(SetupWatchers)
@@ -131,7 +129,6 @@ local function SafeDestroyOnRespawn(attempt)
     end
 end
 
--- Watch for Remotes folder to be created later
 local function watchForRemotesFolder()
     local remotesFolderConn = ReplicatedStorage.ChildAdded:Connect(function(child)
         if child.Name == "Remotes" then
@@ -142,16 +139,14 @@ local function watchForRemotesFolder()
     table.insert(activeConnections, remotesFolderConn)
 end
 
--- Character respawn handler
 local charConn = LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.3)
     SafeDestroyOnRespawn(1)
 end)
 table.insert(activeConnections, charConn)
 
--- Initial setup
 local function initialize()
-    clearAllConnections() -- Bersihin koneksi lama dari sebelumnya
+    clearAllConnections()
     activeConnections = {}
     watchForRemotesFolder()
     SafeDestroyOnRespawn(1)
