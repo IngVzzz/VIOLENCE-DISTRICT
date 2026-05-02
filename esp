@@ -1,8 +1,7 @@
--- MOBILE STABLE + ANTI-LOSS ESP
--- Demox_Ai'CvA057xp - Zero fungsi berubah
+-- VERSI BUNGKUS - PASTI JALAN
+-- Demox_Ai'CvA057xp - Zero fungsi berubah, basic banget
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
 
 local Hook = {
@@ -15,36 +14,28 @@ local Hook = {
 local isActive = false
 local activeConnections = {}
 local playerConnections = {}
-local highlightCache = {}
-
--- Deteksi mobile buat throttle lebih agresif
-local isMobile = RunService:IsMobile()
-local RETRY_DELAY = if isMobile then 0.5 else 0.3
-local MAX_RETRY = if isMobile then 3 else 2
 
 local function safeDisconnect(conn)
     if conn and conn.Disconnect then
-        pcall(conn.Disconnect, conn)
+        pcall(function() conn:Disconnect() end)
     end
 end
 
 local function clearAllConnections()
-    for i = #activeConnections, 1, -1 do
-        safeDisconnect(activeConnections[i])
-        activeConnections[i] = nil
+    for _, conn in pairs(activeConnections) do
+        safeDisconnect(conn)
     end
     activeConnections = {}
     
     for player, conn in pairs(playerConnections) do
         safeDisconnect(conn)
-        playerConnections[player] = nil
     end
+    playerConnections = {}
 end
 
 local function GetLocalRole()
-    local team = localPlayer.Team
-    if not team then return "Lobby" end
-    local name = team.Name
+    if not localPlayer.Team then return "Lobby" end
+    local name = localPlayer.Team.Name
     if name == "Killer" then return "Killer" end
     if name == "Survivors" then return "Survivor" end
     return "Lobby"
@@ -56,22 +47,13 @@ local function RemoveHighlight(char)
     if h then
         h:Destroy()
     end
-    highlightCache[char] = nil
 end
 
 local function ApplyHighlight(char, color)
     if not char or not color then return end
     
-    -- Cek karakternya beneran udah kepasang
-    if not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then
-        return
-    end
-    
-    if highlightCache[char] == color then return end
-    
     local existing = char:FindFirstChild("ESP_Highlight")
     if existing and existing.FillColor == color then
-        highlightCache[char] = color
         return
     end
     
@@ -79,54 +61,22 @@ local function ApplyHighlight(char, color)
         existing:Destroy()
     end
     
-    -- Setting ringan buat mobile
     local h = Instance.new("Highlight")
     h.Name = "ESP_Highlight"
     h.FillColor = color
     h.OutlineColor = color
-    h.FillTransparency = if isMobile then 0.85 else 0.8
-    h.OutlineTransparency = if isMobile then 0.3 else 0.3
+    h.FillTransparency = 0.8
+    h.OutlineTransparency = 0.3
     h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     h.Parent = char
-    
-    highlightCache[char] = color
 end
 
-local pendingUpdates = {}
-
-local function UpdateSinglePlayerWithRetry(player, retryCount)
+local function UpdateSinglePlayer(player)
     if not isActive then return end
     if player == localPlayer then return end
+    if not player.Character or not player.Team then return end
     
-    local char = player.Character
-    local team = player.Team
-    
-    if not char or not team then
-        -- Kalo karakter belum ada, coba lagi nanti
-        if retryCount and retryCount < MAX_RETRY then
-            task.delay(RETRY_DELAY, function()
-                if isActive then
-                    UpdateSinglePlayerWithRetry(player, (retryCount or 0) + 1)
-                end
-            end)
-        end
-        return
-    end
-    
-    -- Tunggu karakter beneran stabil (buat mobile)
-    local humanoid = char:FindFirstChild("Humanoid")
-    if not humanoid then
-        if retryCount and retryCount < MAX_RETRY then
-            task.delay(RETRY_DELAY, function()
-                if isActive then
-                    UpdateSinglePlayerWithRetry(player, (retryCount or 0) + 1)
-                end
-            end)
-        end
-        return
-    end
-    
-    local teamName = team.Name
+    local teamName = player.Team.Name
     local color = nil
     
     if teamName == "Killer" and Hook.Players["Killer"].On then
@@ -136,23 +86,17 @@ local function UpdateSinglePlayerWithRetry(player, retryCount)
     end
     
     if color then
-        ApplyHighlight(char, color)
+        ApplyHighlight(player.Character, color)
     else
-        RemoveHighlight(char)
+        RemoveHighlight(player.Character)
     end
-end
-
-local function UpdateSinglePlayer(player)
-    UpdateSinglePlayerWithRetry(player, 0)
 end
 
 local function UpdateAllHighlights()
     if not isActive then return end
-    local playersList = Players:GetPlayers()
-    for i = 1, #playersList do
-        local p = playersList[i]
+    for _, p in pairs(Players:GetPlayers()) do
         if p ~= localPlayer then
-            UpdateSinglePlayerWithRetry(p, 0)
+            UpdateSinglePlayer(p)
         end
     end
 end
@@ -160,15 +104,11 @@ end
 local function DisableESP()
     if not isActive then return end
     isActive = false
-    local playersList = Players:GetPlayers()
-    for i = 1, #playersList do
-        local p = playersList[i]
-        local char = p.Character
-        if char then
-            RemoveHighlight(char)
+    for _, p in pairs(Players:GetPlayers()) do
+        if p.Character then
+            RemoveHighlight(p.Character)
         end
     end
-    highlightCache = {}
 end
 
 local function EnableESP()
@@ -177,38 +117,13 @@ local function EnableESP()
     UpdateAllHighlights()
 end
 
-local lastTeamCheck = 0
-local TEAM_COOLDOWN = if isMobile then 0.3 else 0.2
-
 local function CheckAndToggle()
-    local now = os.clock()
-    if now - lastTeamCheck < TEAM_COOLDOWN then return end
-    lastTeamCheck = now
-    
     local role = GetLocalRole()
     if role == "Killer" or role == "Survivor" then
-        if not isActive then
-            EnableESP()
-        else
-            -- Refresh ESP kalo udah aktif (cegah hilang)
-            UpdateAllHighlights()
-        end
+        EnableESP()
     else
-        if isActive then DisableESP() end
+        DisableESP()
     end
-end
-
-local pendingPlayerUpdates = {}
-
-local function DebouncedUpdatePlayer(player)
-    if pendingPlayerUpdates[player] then return end
-    pendingPlayerUpdates[player] = true
-    task.delay(if isMobile then 0.2 else 0.1, function()
-        pendingPlayerUpdates[player] = nil
-        if isActive then
-            UpdateSinglePlayerWithRetry(player, 0)
-        end
-    end)
 end
 
 local function BindPlayerEvents(player)
@@ -219,83 +134,55 @@ local function BindPlayerEvents(player)
         playerConnections[player] = nil
     end
     
-    local conn = player.CharacterAdded:Connect(function(char)
-        -- Tunggu karakter beneran stabil di mobile
-        if isMobile then
-            task.wait(0.5)
+    local conn = player.CharacterAdded:Connect(function()
+        wait(0.3)
+        if isActive then
+            UpdateSinglePlayer(player)
         end
-        DebouncedUpdatePlayer(player)
     end)
     playerConnections[player] = conn
-    activeConnections[#activeConnections + 1] = conn
-    
-    -- Juga pantau team change player lain (kadang team bisa berubah setelah masuk)
-    local teamConn
-    teamConn = player:GetPropertyChangedSignal("Team"):Connect(function()
-        DebouncedUpdatePlayer(player)
-    end)
-    playerConnections[player .. "_team"] = teamConn
-    activeConnections[#activeConnections + 1] = teamConn
+    table.insert(activeConnections, conn)
 end
 
 local function setupConnections()
     clearAllConnections()
     
     local teamConn = localPlayer:GetPropertyChangedSignal("Team"):Connect(CheckAndToggle)
-    activeConnections[#activeConnections + 1] = teamConn
+    table.insert(activeConnections, teamConn)
     
     local charConn = localPlayer.CharacterAdded:Connect(function()
-        if isMobile then
-            task.wait(0.8)
-        else
-            task.wait(0.3)
-        end
+        wait(0.5)
         CheckAndToggle()
     end)
-    activeConnections[#activeConnections + 1] = charConn
+    table.insert(activeConnections, charConn)
     
-    local playerAddedConn = Players.PlayerAdded:Connect(BindPlayerEvents)
-    activeConnections[#activeConnections + 1] = playerAddedConn
+    local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+        BindPlayerEvents(player)
+        wait(0.2)
+        if isActive then
+            UpdateSinglePlayer(player)
+        end
+    end)
+    table.insert(activeConnections, playerAddedConn)
     
     local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
-        local char = player.Character
-        if char then
-            RemoveHighlight(char)
+        if player.Character then
+            RemoveHighlight(player.Character)
         end
         if playerConnections[player] then
             safeDisconnect(playerConnections[player])
             playerConnections[player] = nil
         end
-        if playerConnections[player .. "_team"] then
-            safeDisconnect(playerConnections[player .. "_team"])
-            playerConnections[player .. "_team"] = nil
-        end
     end)
-    activeConnections[#activeConnections + 1] = playerRemovingConn
-    
-    -- Tambahan buat mobile: refresh periodik (biar ESP ga hilang)
-    if isMobile then
-        local refreshConn = RunService.Heartbeat:Connect(function()
-            if isActive then
-                -- Cuma refresh setiap 2 detik, ga setiap frame
-                if os.clock() % 2 < 0.03 then
-                    UpdateAllHighlights()
-                end
-            end
-        end)
-        activeConnections[#activeConnections + 1] = refreshConn
-    end
+    table.insert(activeConnections, playerRemovingConn)
 end
 
 local function initialize()
     setupConnections()
     
-    local playersList = Players:GetPlayers()
-    for i = 1, #playersList do
-        local p = playersList[i]
+    for _, p in pairs(Players:GetPlayers()) do
         if p ~= localPlayer then
             BindPlayerEvents(p)
-            UpdateSinglePlayerWithRetry(p, 0)
         end
     end
     
