@@ -1,6 +1,3 @@
--- FINAL VERSION - Aimbot Killer (Fixed)
--- Demox_Ai'CvA057xp - Zero leak, Zero bug, Stabil untuk 5+ jam
-
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -13,7 +10,6 @@ local currentTarget = nil
 local maxLockDistance = 35
 local SMOOTHNESS = 0.85
 
--- Event management
 local activeConnections = {}
 local uiConnections = {}
 local button = nil
@@ -30,16 +26,13 @@ local function cleanUIEvents()
 end
 
 local function cleanAllEvents()
-    -- Bersihin semua koneksi di activeConnections
     for _, conn in pairs(activeConnections) do
         pcall(function() conn:Disconnect() end)
     end
     activeConnections = {}
     
-    -- Bersihin UI events
     cleanUIEvents()
     
-    -- Bersihin renderConnection secara khusus
     if renderConnection then
         pcall(function() renderConnection:Disconnect() end)
         renderConnection = nil
@@ -217,7 +210,6 @@ local function updateTargetOptimized()
 end
 
 local function setupRenderStepped()
-    -- Bersihin renderConnection dari activeConnections kalo ada
     if renderConnection then
         for i = #activeConnections, 1, -1 do
             if activeConnections[i] == renderConnection then
@@ -297,10 +289,8 @@ local function setupTeamHandler()
 end
 
 local function initialize()
-    -- Bersihin semua koneksi lama sebelum bikin baru
     cleanAllEvents()
     
-    -- Update camera reference
     Camera = workspace.CurrentCamera
     
     CreateGUI()
