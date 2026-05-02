@@ -1,11 +1,8 @@
--- FINAL VERSION - Hitbox Expander (CanCollide = false)
--- Demox_Ai'CvA057xp - Ukuran 28, Ga ngeblock gerak
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
-local HITBOX_Size = 28
+local HITBOX_Size = 30
 local OriginalHitboxSizes = {}
 local active = false
 local updateTimer = 0
@@ -94,7 +91,7 @@ local function ExpandHitbox(player)
         OriginalHitboxSizes[player] = root.Size
         pcall(function()
             root.Size = Vector3.new(HITBOX_Size, HITBOX_Size, HITBOX_Size)
-            root.CanCollide = false  -- <-- INI YANG LU MINTA, GOBLOK
+            root.CanCollide = false
         end)
     end
 end
