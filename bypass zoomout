@@ -1,3 +1,6 @@
+-- FINAL VERSION - Zoom Unlocker for Survivor (FIXED)
+-- Demox_Ai'CvA057xp - No infinite loop, proper cleanup
+
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
@@ -11,20 +14,19 @@ local activeConnections = {}
 local renderConn = nil
 local maxZoomDistConn = nil
 local inputConn = nil
-local enableAttempts = 0
-local MAX_ENABLE_ATTEMPTS = 10
+local DEFAULT_FOV = 70  -- Simpen default FOV
 
 local function safeDisconnect(conn)
     pcall(function() if conn then conn:Disconnect() end end)
 end
 
 local function cleanupConnections()
-    for _, conn in pairs(activeConnections) do
-        safeDisconnect(conn)
+    for i = #activeConnections, 1, -1 do
+        safeDisconnect(activeConnections[i])
+        activeConnections[i] = nil
     end
     activeConnections = {}
     
-    -- Cleanup specific connections
     if renderConn then
         safeDisconnect(renderConn)
         renderConn = nil
@@ -61,10 +63,9 @@ local function disableZoom()
     
     if Camera then
         pcall(function()
-            Camera.FieldOfView = 70
+            Camera.FieldOfView = DEFAULT_FOV
         end)
     end
-    zoomLevel = 50
     
     pcall(function()
         LocalPlayer.CameraMaxZoomDistance = 40
@@ -75,9 +76,14 @@ local function disableZoom()
 end
 
 local function setupZoomConnections()
+    -- Bersihin koneksi lama kalo ada
+    if maxZoomDistConn then safeDisconnect(maxZoomDistConn) end
+    if inputConn then safeDisconnect(inputConn) end
+    if renderConn then safeDisconnect(renderConn) end
+    
     -- Max Zoom Distance protection
     maxZoomDistConn = LocalPlayer:GetPropertyChangedSignal("CameraMaxZoomDistance"):Connect(function()
-        if GetRole() == "Survivor" and LocalPlayer.CameraMaxZoomDistance < 50 then
+        if GetRole() == "Survivor" and isActive and LocalPlayer.CameraMaxZoomDistance < 50 then
             pcall(function()
                 LocalPlayer.CameraMaxZoomDistance = 50
             end)
@@ -89,6 +95,7 @@ local function setupZoomConnections()
     inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         if GetRole() ~= "Survivor" then return end
+        if not isActive then return end
         if not Camera then return end
         if input.UserInputType == Enum.UserInputType.MouseWheel then
             zoomLevel = zoomLevel - (input.Position.Z * zoomSpeed)
@@ -125,32 +132,26 @@ local function setupZoomConnections()
             end
         end)
     end)
-    -- renderConn sengaja gak dimasukkan ke activeConnections karena lifecycle-nya khusus
+    -- renderConn sekarang juga masuk activeConnections biar cleanup jalan
+    table.insert(activeConnections, renderConn)
 end
 
 local function enableZoom()
-    -- Prevent multiple calls
-    if isActive then 
-        return 
-    end
-    
-    -- Prevent infinite recursion
-    if enableAttempts > MAX_ENABLE_ATTEMPTS then
-        return
-    end
+    if isActive then return end
     
     if not getCamera() then
-        enableAttempts = enableAttempts + 1
-        task.wait(0.5)
-        if GetRole() == "Survivor" then
-            enableZoom()
-        end
+        -- Tunggu sebentar, coba lagi (PAKE DELAY, BUKAN REKURSI LANGSUNG)
+        task.delay(0.5, function()
+            if GetRole() == "Survivor" and not isActive then
+                enableZoom()
+            end
+        end)
         return
     end
     
-    enableAttempts = 0
     isActive = true
     zoomLevel = Camera.FieldOfView
+    DEFAULT_FOV = Camera.FieldOfView  -- Simpen FOV default dari game
     
     pcall(function()
         LocalPlayer.CameraMaxZoomDistance = 50
