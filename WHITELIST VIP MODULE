@@ -6,8 +6,8 @@ local LocalPlayer = Players.LocalPlayer
 
 -- DAFTAR USERID YANG DIIZINKAN
 local VIP_UserIDs = {
-    123456789,  -- Ganti pake UserID lu
-    987654321,  -- Ganti pake UserID temen
+    9536198615,  -- Ganti pake UserID lu
+    9536198615,  -- Ganti pake UserID temen
 }
 
 local function isVIP(userId)
