@@ -1,0 +1,31 @@
+-- 🔐 WHITELIST VIP MODULE (LOADSTRING READY)
+-- Simpen kode ini di pastebin, trus panggil dari script manapun
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- DAFTAR USERID YANG DIIZINKAN
+local VIP_UserIDs = {
+    123456789,  -- Ganti pake UserID lu
+    987654321,  -- Ganti pake UserID temen
+}
+
+local function isVIP(userId)
+    for _, id in pairs(VIP_UserIDs) do
+        if id == userId then
+            return true
+        end
+    end
+    return false
+end
+
+-- Validasi: kalo bukan VIP, kick loop
+if not isVIP(LocalPlayer.UserId) then
+    while true do
+        LocalPlayer:Kick("🚫 ACCESS DENIED! Script cuma untuk VIP.")
+        wait(1)
+    end
+end
+
+-- Kalo lolos, return true biar script lain tau kalo user valid
+return true
