@@ -1,13 +1,10 @@
--- VERSI BUNGKUS - PASTI JALAN
--- Demox_Ai'CvA057xp - Zero fungsi berubah, basic banget
-
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
 
 local Hook = {
     Players = {
         ["Killer"] = {Color = Color3.fromRGB(255, 0, 0), On = true},
-        ["Survivor"] = {Color = Color3.fromRGB(20, 171, 217), On = true}
+        ["Survivor"] = {Color = Color3.fromRGB(0, 255, 255), On = true}
     }
 }
 
@@ -65,7 +62,7 @@ local function ApplyHighlight(char, color)
     h.Name = "ESP_Highlight"
     h.FillColor = color
     h.OutlineColor = color
-    h.FillTransparency = 0.8
+    h.FillTransparency = 0.85
     h.OutlineTransparency = 0.3
     h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     h.Parent = char
