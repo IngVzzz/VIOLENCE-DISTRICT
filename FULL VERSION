@@ -1324,7 +1324,7 @@ SurvivorTab:CreateToggle({
 -- ESP PLAYER
 SurvivorTab:CreateToggle({
    Name = "ESP PLAYER",
-   CurrentValue = true,
+   CurrentValue = false,
    Flag = "ESP_Player",
    Callback = function(Value)
       _G.ESP_Player = Value
