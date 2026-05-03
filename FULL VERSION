@@ -1,0 +1,1475 @@
+-- BITWISE HUB V.2.0 [VIP] - RAYFIELD VERSION (ZOOM UPDATED)
+-- SURVIVOR: DISABLE SKILLCHECK, ESP PLAYER, MOONWALK, CROUSHAIR, BYPASS ZOOM
+-- KILLER: AIMBOT, HITBOX (DENGAN SLIDER UKURAN + TRANSPARENCY)
+
+-- LOAD RAYFIELD
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- CREATE WINDOW
+local Window = Rayfield:CreateWindow({
+   Name = "😈🔥Violence District IngVzzz🔥😈",
+   LoadingTitle = "Violence District load",
+   LoadingSubtitle = "by IngVzzz😈🔥",
+   ConfigurationSaving = {
+      Enabled = false,
+      FolderName = nil,
+      FileName = "Violence District Hub"
+   }
+})
+
+-- NOTIFIKASI
+Rayfield:Notify({
+   Title = "loading script",
+   Content = "siap pakai🔥😈",
+   Duration = 3,
+   Image = 13047715178,
+   Actions = {
+      Ignore = {
+         Name = "Okay!",
+         Callback = function() end
+      }
+   }
+})
+
+-- ==================== BYPASS ZOOM SCRIPT (V2 - PURE FUNCTIONS) ====================
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local Camera = nil
+local zoomLevel = 50
+local zoomSpeed = 3
+local isActive = false
+local DEFAULT_FOV = 70
+
+local renderConn = nil
+local inputConn = nil
+local maxZoomConn = nil
+
+local function getCamera()
+    if workspace and workspace.CurrentCamera then
+        Camera = workspace.CurrentCamera
+        return true
+    end
+    return false
+end
+
+-- Fungsi buat MATIKAN zoom
+local function disableZoom()
+    if not isActive then return end
+    isActive = false
+    
+    if Camera then
+        pcall(function()
+            Camera.FieldOfView = DEFAULT_FOV
+        end)
+    end
+    
+    pcall(function()
+        LocalPlayer.CameraMaxZoomDistance = 40
+        LocalPlayer.CameraMinZoomDistance = 1
+    end)
+    
+    if renderConn then renderConn:Disconnect() renderConn = nil end
+    if inputConn then inputConn:Disconnect() inputConn = nil end
+    if maxZoomConn then maxZoomConn:Disconnect() maxZoomConn = nil end
+end
+
+-- Fungsi buat NYALAKAN zoom
+local function enableZoom()
+    if isActive then return end
+    
+    if not getCamera() then
+        task.wait(0.3)
+        if not Camera then return end
+    end
+    
+    isActive = true
+    zoomLevel = Camera.FieldOfView
+    DEFAULT_FOV = Camera.FieldOfView
+    
+    pcall(function()
+        LocalPlayer.CameraMaxZoomDistance = 50
+        LocalPlayer.CameraMinZoomDistance = 8
+    end)
+    
+    maxZoomConn = LocalPlayer:GetPropertyChangedSignal("CameraMaxZoomDistance"):Connect(function()
+        if isActive and LocalPlayer.CameraMaxZoomDistance < 50 then
+            pcall(function() LocalPlayer.CameraMaxZoomDistance = 50 end)
+        end
+    end)
+    
+    inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if not isActive then return end
+        if not Camera then return end
+        if input.UserInputType == Enum.UserInputType.MouseWheel then
+            zoomLevel = zoomLevel - (input.Position.Z * zoomSpeed)
+            zoomLevel = math.clamp(zoomLevel, 20, 120)
+            pcall(function() Camera.FieldOfView = zoomLevel end)
+        end
+    end)
+    
+    renderConn = RunService.RenderStepped:Connect(function()
+        if not isActive then return end
+        if not Camera then return end
+        pcall(function()
+            if Camera.FieldOfView ~= zoomLevel then
+                Camera.FieldOfView = zoomLevel
+            end
+            if LocalPlayer.CameraMaxZoomDistance ~= 50 then
+                LocalPlayer.CameraMaxZoomDistance = 50
+            end
+        end)
+    end)
+end
+
+-- Optional: Auto matiin kalo ganti role (lo bisa hapus kalo gak mau)
+local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+    if LocalPlayer.Team and LocalPlayer.Team.Name ~= "Survivors" then
+        disableZoom()
+    end
+end)
+
+-- ==================== AIMBOT SCRIPT ====================
+local PlayersAimbot = game:GetService("Players")
+local UserInputServiceAimbot = game:GetService("UserInputService")
+local CoreGuiAimbot = game:GetService("CoreGui")
+local CameraAimbot = workspace.CurrentCamera
+local LocalPlayerAimbot = PlayersAimbot.LocalPlayer
+
+local aimbotActive = false
+local currentTarget = nil
+local maxLockDistance = 35
+local SMOOTHNESS = 0.85
+
+local aimbotConnections = {}
+local uiConnections = {}
+local button = nil
+local stroke = nil
+local ScreenGui = nil
+local lastTargetUpdate = 0
+local renderConnection = nil
+
+local function cleanUIEvents()
+    for _, conn in pairs(uiConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    uiConnections = {}
+end
+
+local function cleanAimbotEvents()
+    for _, conn in pairs(aimbotConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    aimbotConnections = {}
+    
+    cleanUIEvents()
+    
+    if renderConnection then
+        pcall(function() renderConnection:Disconnect() end)
+        renderConnection = nil
+    end
+end
+
+local function lockMouse()
+    pcall(function()
+        UserInputServiceAimbot.MouseBehavior = Enum.MouseBehavior.LockCenter
+        UserInputServiceAimbot.MouseIconEnabled = false
+    end)
+end
+
+local function unlockMouse()
+    pcall(function()
+        UserInputServiceAimbot.MouseBehavior = Enum.MouseBehavior.Default
+        UserInputServiceAimbot.MouseIconEnabled = true
+    end)
+end
+
+local function GetRole()
+    if not LocalPlayer.Team then return "Unknown" end
+    local name = LocalPlayer.Team.Name
+    if name == "Killer" then return "Killer" end
+    if name == "Survivors" then return "Survivor" end
+    return "Lobby"
+end
+
+local function getClosestTarget()
+    if not CameraAimbot then return nil end
+    local closest = nil
+    local shortestDist = math.huge
+    local center = CameraAimbot.ViewportSize / 2
+    local myChar = LocalPlayerAimbot.Character
+    if not myChar then return nil end
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+    
+    for _, p in pairs(PlayersAimbot:GetPlayers()) do
+        if p ~= LocalPlayerAimbot then
+            local char = p.Character
+            if char then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                local hum = char:FindFirstChild("Humanoid")
+                if root and hum and hum.Health > 0 then
+                    local dist3D = (myRoot.Position - root.Position).Magnitude
+                    if dist3D <= maxLockDistance then
+                        local screenPoint, onScreen = CameraAimbot:WorldToViewportPoint(root.Position)
+                        if onScreen then
+                            local screenDist = (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude
+                            if screenDist < shortestDist then
+                                closest = p
+                                shortestDist = screenDist
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function UpdateButtonUI()
+    if not button then return end
+    pcall(function()
+        if aimbotActive then
+            button.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+            button.BackgroundTransparency = 0.3
+            if stroke then stroke.Color = Color3.fromRGB(100, 255, 100) end
+        else
+            button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+            button.BackgroundTransparency = 0.15
+            if stroke then stroke.Color = Color3.fromRGB(255, 100, 100) end
+        end
+    end)
+end
+
+local function CreateAimbotGUI()
+    cleanUIEvents()
+    
+    local existingGui = CoreGuiAimbot:FindFirstChild("SimpleAimbot")
+    if existingGui then
+        pcall(function() existingGui:Destroy() end)
+    end
+    
+    ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "SimpleAimbot"
+    ScreenGui.Parent = CoreGuiAimbot
+
+    button = Instance.new("ImageButton")
+    button.Size = UDim2.new(0, 50, 0, 50)
+    button.Position = UDim2.new(1, -210, 1, -420)
+    button.AnchorPoint = Vector2.new(1, 1)
+    button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+    button.BackgroundTransparency = 0.15
+    button.Image = "rbxassetid://3926305904"
+    button.ImageColor3 = Color3.fromRGB(255, 255, 255)
+    button.ImageTransparency = 0.2
+    button.Parent = ScreenGui
+
+    local corner = Instance.new("UICorner", button)
+    corner.CornerRadius = UDim.new(1, 0)
+    
+    stroke = Instance.new("UIStroke", button)
+    stroke.Color = Color3.fromRGB(255, 100, 100)
+    stroke.Thickness = 2
+    stroke.Transparency = 0.5
+
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+
+    local beganConn = button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = button.Position
+        end
+    end)
+    table.insert(uiConnections, beganConn)
+
+    local endedConn = button.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    table.insert(uiConnections, endedConn)
+
+    local changedConn = button.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            button.Position = UDim2.new(
+                startPos.X.Scale, 
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+    table.insert(uiConnections, changedConn)
+
+    local clickConn = button.MouseButton1Click:Connect(function()
+        if dragging then
+            dragging = false
+            return
+        end
+        
+        if GetRole() == "Killer" then
+            aimbotActive = not aimbotActive
+            if aimbotActive then
+                lockMouse()
+                currentTarget = getClosestTarget()
+            else
+                unlockMouse()
+                currentTarget = nil
+            end
+            UpdateButtonUI()
+            
+            _G.Aimbot = aimbotActive
+        else
+            local originalColor = button.BackgroundColor3
+            button.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+            task.wait(0.1)
+            button.BackgroundColor3 = originalColor
+        end
+    end)
+    table.insert(uiConnections, clickConn)
+end
+
+local function setupRenderStepped()
+    if renderConnection then
+        for i = #aimbotConnections, 1, -1 do
+            if aimbotConnections[i] == renderConnection then
+                table.remove(aimbotConnections, i)
+            end
+        end
+        pcall(function() renderConnection:Disconnect() end)
+        renderConnection = nil
+    end
+    
+    renderConnection = RunService.RenderStepped:Connect(function()
+        if not aimbotActive then return end
+        
+        if GetRole() ~= "Killer" then
+            if aimbotActive then
+                aimbotActive = false
+                unlockMouse()
+                currentTarget = nil
+                UpdateButtonUI()
+                _G.Aimbot = false
+            end
+            return
+        end
+        
+        if not CameraAimbot then return end
+        
+        local now = tick()
+        if now - lastTargetUpdate >= 0.1 then
+            lastTargetUpdate = now
+            if not currentTarget then
+                currentTarget = getClosestTarget()
+            elseif currentTarget and (not currentTarget.Character or not currentTarget.Character:FindFirstChild("HumanoidRootPart")) then
+                currentTarget = getClosestTarget()
+            end
+        end
+        
+        if currentTarget and currentTarget.Character then
+            local root = currentTarget.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local lookAt = CFrame.new(CameraAimbot.CFrame.Position, root.Position)
+                CameraAimbot.CFrame = CameraAimbot.CFrame:Lerp(lookAt, SMOOTHNESS)
+            else
+                currentTarget = nil
+            end
+        else
+            currentTarget = nil
+        end
+    end)
+    table.insert(aimbotConnections, renderConnection)
+end
+
+local function setupCameraHandler()
+    local cameraConn = workspace.Changed:Connect(function()
+        if workspace.CurrentCamera then
+            CameraAimbot = workspace.CurrentCamera
+        end
+    end)
+    table.insert(aimbotConnections, cameraConn)
+end
+
+local function setupTeamHandler()
+    local teamConn = LocalPlayerAimbot:GetPropertyChangedSignal("Team"):Connect(function()
+        if ScreenGui then
+            if GetRole() == "Killer" then
+                ScreenGui.Enabled = true
+            else
+                ScreenGui.Enabled = false
+                if aimbotActive then
+                    aimbotActive = false
+                    unlockMouse()
+                    currentTarget = nil
+                    UpdateButtonUI()
+                    _G.Aimbot = false
+                end
+            end
+        end
+    end)
+    table.insert(aimbotConnections, teamConn)
+end
+
+local function StopAimbot()
+    aimbotActive = false
+    unlockMouse()
+    currentTarget = nil
+    _G.Aimbot = false
+    
+    if ScreenGui then
+        ScreenGui.Enabled = false
+    end
+    
+    if button then
+        UpdateButtonUI()
+    end
+    
+    cleanAimbotEvents()
+end
+
+local function StartAimbot()
+    if aimbotActive then return end
+    
+    cleanAimbotEvents()
+    aimbotConnections = {}
+    uiConnections = {}
+    aimbotActive = true
+    _G.Aimbot = true
+    
+    CameraAimbot = workspace.CurrentCamera
+    
+    CreateAimbotGUI()
+    setupRenderStepped()
+    setupCameraHandler()
+    setupTeamHandler()
+    
+    if GetRole() == "Killer" and ScreenGui then
+        ScreenGui.Enabled = true
+        lockMouse()
+        currentTarget = getClosestTarget()
+    elseif ScreenGui then
+        ScreenGui.Enabled = false
+    end
+    
+    UpdateButtonUI()
+end
+
+-- ==================== ESP PLAYER SCRIPT ====================
+local PlayersESP = game:GetService("Players")
+local LocalPlayerESP = PlayersESP.LocalPlayer
+
+local Hook = {
+    Players = {
+        ["Killer"] = {Color = Color3.fromRGB(255, 0, 0), On = true},
+        ["Survivor"] = {Color = Color3.fromRGB(0, 255, 255), On = true}
+    }
+}
+
+local espActive = true
+local espConnections = {}
+local playerConnections = {}
+
+local function safeDisconnectESP(conn)
+    if conn and conn.Disconnect then
+        pcall(function() conn:Disconnect() end)
+    end
+end
+
+local function clearAllESPConnections()
+    for _, conn in pairs(espConnections) do
+        safeDisconnectESP(conn)
+    end
+    espConnections = {}
+    
+    for player, conn in pairs(playerConnections) do
+        safeDisconnectESP(conn)
+    end
+    playerConnections = {}
+end
+
+local function RemoveHighlightESP(char)
+    if not char then return end
+    local h = char:FindFirstChild("ESP_Highlight")
+    if h then
+        h:Destroy()
+    end
+end
+
+local function ApplyHighlightESP(char, color)
+    if not char or not color then return end
+    
+    local existing = char:FindFirstChild("ESP_Highlight")
+    if existing and existing.FillColor == color then
+        return
+    end
+    
+    if existing then
+        existing:Destroy()
+    end
+    
+    local h = Instance.new("Highlight")
+    h.Name = "ESP_Highlight"
+    h.FillColor = color
+    h.OutlineColor = color
+    h.FillTransparency = 0.85
+    h.OutlineTransparency = 0.3
+    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    h.Parent = char
+end
+
+local function UpdateSinglePlayerESP(player)
+    if not espActive then return end
+    if player == LocalPlayerESP then return end
+    if not player.Character or not player.Team then return end
+    
+    local teamName = player.Team.Name
+    local color = nil
+    
+    if teamName == "Killer" and Hook.Players["Killer"].On then
+        color = Hook.Players["Killer"].Color
+    elseif teamName == "Survivors" and Hook.Players["Survivor"].On then
+        color = Hook.Players["Survivor"].Color
+    end
+    
+    if color then
+        ApplyHighlightESP(player.Character, color)
+    else
+        RemoveHighlightESP(player.Character)
+    end
+end
+
+local function UpdateAllHighlightsESP()
+    if not espActive then return end
+    for _, p in pairs(PlayersESP:GetPlayers()) do
+        if p ~= LocalPlayerESP then
+            UpdateSinglePlayerESP(p)
+        end
+    end
+end
+
+local function BindPlayerEventsESP(player)
+    if player == LocalPlayerESP then return end
+    
+    if playerConnections[player] then
+        safeDisconnectESP(playerConnections[player])
+        playerConnections[player] = nil
+    end
+    
+    local conn = player.CharacterAdded:Connect(function()
+        task.wait(0.3)
+        if espActive then
+            UpdateSinglePlayerESP(player)
+        end
+    end)
+    playerConnections[player] = conn
+    table.insert(espConnections, conn)
+end
+
+local function StopESP()
+    espActive = false
+    for _, p in pairs(PlayersESP:GetPlayers()) do
+        if p.Character then
+            RemoveHighlightESP(p.Character)
+        end
+    end
+    clearAllESPConnections()
+end
+
+local function StartESP()
+    if espActive then return end
+    espActive = true
+    espConnections = {}
+    playerConnections = {}
+    
+    local playerAddedConn = PlayersESP.PlayerAdded:Connect(function(player)
+        BindPlayerEventsESP(player)
+        task.wait(0.2)
+        if espActive then
+            UpdateSinglePlayerESP(player)
+        end
+    end)
+    table.insert(espConnections, playerAddedConn)
+    
+    local playerRemovingConn = PlayersESP.PlayerRemoving:Connect(function(player)
+        if player.Character then
+            RemoveHighlightESP(player.Character)
+        end
+        if playerConnections[player] then
+            safeDisconnectESP(playerConnections[player])
+            playerConnections[player] = nil
+        end
+    end)
+    table.insert(espConnections, playerRemovingConn)
+    
+    for _, p in pairs(PlayersESP:GetPlayers()) do
+        if p ~= LocalPlayerESP then
+            BindPlayerEventsESP(p)
+        end
+    end
+    
+    UpdateAllHighlightsESP()
+end
+
+StartESP()
+
+-- ==================== HITBOX SCRIPT ====================
+local HITBOX_Size = 30
+local HITBOX_Transparency = 0.5
+local OriginalHitboxSizes = {}
+local OriginalTransparency = {}
+local hitboxActive = false
+local updateTimer = 0
+local hitboxConnections = {}
+local hitboxPlayerConns = {}
+
+local function safeDisconnectHitbox(conn)
+    pcall(function() if conn then conn:Disconnect() end end)
+end
+
+local function clearAllHitboxPlayerConns()
+    for player, conn in pairs(hitboxPlayerConns) do
+        safeDisconnectHitbox(conn)
+    end
+    hitboxPlayerConns = {}
+end
+
+local function clearHitboxConnections()
+    for _, conn in pairs(hitboxConnections) do
+        safeDisconnectHitbox(conn)
+    end
+    hitboxConnections = {}
+    clearAllHitboxPlayerConns()
+end
+
+local function GetRoleHitbox()
+    if not LocalPlayer.Team then return "Lobby" end
+    local name = LocalPlayer.Team.Name
+    if name == "Killer" then return "Killer" end
+    if name == "Survivors" then return "Survivor" end
+    return "Lobby"
+end
+
+local function IsSurvivor(player)
+    if player == LocalPlayer then return false end
+    if not player.Team then return false end
+    return player.Team.Name == "Survivors"
+end
+
+local function ResetHitbox(player)
+    if not player then return end
+    local orig = OriginalHitboxSizes[player]
+    local origTrans = OriginalTransparency[player]
+    if player.Character then
+        local root = player.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            pcall(function()
+                if orig then root.Size = orig end
+                if origTrans then root.Transparency = origTrans end
+                root.CanCollide = true
+            end)
+        end
+    end
+    OriginalHitboxSizes[player] = nil
+    OriginalTransparency[player] = nil
+end
+
+local function ResetAllHitboxes()
+    for p, origSize in pairs(OriginalHitboxSizes) do
+        if p and p.Character then
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local origTrans = OriginalTransparency[p]
+                pcall(function()
+                    root.Size = origSize
+                    if origTrans then root.Transparency = origTrans end
+                    root.CanCollide = true
+                end)
+            end
+        end
+    end
+    OriginalHitboxSizes = {}
+    OriginalTransparency = {}
+end
+
+local function ExpandHitbox(player)
+    if not hitboxActive then return end
+    if not player or player == LocalPlayer then return end
+    if not IsSurvivor(player) then return end
+    
+    local char = player.Character
+    if not char then return end
+    
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not root or not hum or hum.Health <= 0 then
+        ResetHitbox(player)
+        return
+    end
+    
+    if not OriginalHitboxSizes[player] then
+        OriginalHitboxSizes[player] = root.Size
+        OriginalTransparency[player] = root.Transparency
+        pcall(function()
+            root.Size = Vector3.new(HITBOX_Size, HITBOX_Size, HITBOX_Size)
+            root.Transparency = HITBOX_Transparency
+            root.CanCollide = false
+        end)
+    end
+end
+
+local function UpdateAllHitboxes()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            ExpandHitbox(p)
+        end
+    end
+end
+
+local function UpdateHitboxSize(newSize)
+    HITBOX_Size = newSize
+    for p, origSize in pairs(OriginalHitboxSizes) do
+        if p and p.Character then
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                pcall(function()
+                    root.Size = Vector3.new(HITBOX_Size, HITBOX_Size, HITBOX_Size)
+                end)
+            end
+        end
+    end
+end
+
+local function UpdateHitboxTransparency(trans)
+    HITBOX_Transparency = trans
+    for p, origSize in pairs(OriginalHitboxSizes) do
+        if p and p.Character then
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                pcall(function()
+                    root.Transparency = trans
+                end)
+            end
+        end
+    end
+end
+
+local function BindHitboxPlayerEvents(player)
+    if player == LocalPlayer then return end
+    
+    if hitboxPlayerConns[player] then
+        safeDisconnectHitbox(hitboxPlayerConns[player])
+        hitboxPlayerConns[player] = nil
+    end
+    
+    local conn = player.CharacterAdded:Connect(function()
+        task.wait(0.3)
+        ExpandHitbox(player)
+    end)
+    hitboxPlayerConns[player] = conn
+    table.insert(hitboxConnections, conn)
+end
+
+local function BindAllExistingHitboxPlayers()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            ExpandHitbox(p)
+            BindHitboxPlayerEvents(p)
+            task.wait(0.05)
+        end
+    end
+end
+
+local function StopHitbox()
+    hitboxActive = false
+    ResetAllHitboxes()
+    clearHitboxConnections()
+end
+
+local function StartHitbox()
+    if hitboxActive then return end
+    hitboxActive = true
+    hitboxConnections = {}
+    hitboxPlayerConns = {}
+    
+    local renderConn = RunService.RenderStepped:Connect(function(dt)
+        if GetRoleHitbox() ~= "Killer" then
+            if hitboxActive then
+                hitboxActive = false
+                ResetAllHitboxes()
+            end
+            return
+        end
+        
+        if not hitboxActive then
+            hitboxActive = true
+        end
+        
+        updateTimer = updateTimer + dt
+        if updateTimer >= 0.25 then
+            updateTimer = 0
+            UpdateAllHitboxes()
+        end
+    end)
+    table.insert(hitboxConnections, renderConn)
+    
+    local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+        hitboxActive = false
+        ResetAllHitboxes()
+        task.wait(0.2)
+        if GetRoleHitbox() == "Killer" then
+            hitboxActive = true
+            UpdateAllHitboxes()
+        end
+    end)
+    table.insert(hitboxConnections, teamConn)
+    
+    local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+        BindHitboxPlayerEvents(player)
+    end)
+    table.insert(hitboxConnections, playerAddedConn)
+    
+    local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+        ResetHitbox(player)
+        if hitboxPlayerConns[player] then
+            safeDisconnectHitbox(hitboxPlayerConns[player])
+            hitboxPlayerConns[player] = nil
+        end
+    end)
+    table.insert(hitboxConnections, playerRemovingConn)
+    
+    BindAllExistingHitboxPlayers()
+    
+    if GetRoleHitbox() == "Killer" then
+        hitboxActive = true
+    end
+end
+
+-- ==================== MOONWALK SCRIPT ====================
+local UIS = game:GetService("UserInputService")
+local CoreGuiMoonwalk = game:GetService("CoreGui")
+
+local char = nil
+local humanoid = nil
+local rootPart = nil
+
+local currentGui = nil
+local buttonMoonwalk = nil
+local moonwalkActive = false
+local turningLeft = false
+local turningRight = false
+
+local baseYaw = 0
+local currentYaw = 0
+local maxTurn = 40
+local turnSpeed = 850
+local returnSpeed = 800
+
+local moonwalkConnections = {}
+local buttonConnections = {}
+local lastCharCheck = 0
+local charValid = false
+
+local function updateCharacterRefs(newChar)
+    char = newChar or LocalPlayer.Character
+    if not char then 
+        charValid = false
+        return false 
+    end
+    humanoid = char:FindFirstChild("Humanoid")
+    rootPart = char:FindFirstChild("HumanoidRootPart")
+    charValid = (humanoid and rootPart and rootPart.Parent ~= nil)
+    return charValid
+end
+
+local function getYaw(cf)
+    local _, y, _ = cf:ToEulerAnglesYXZ()
+    return math.deg(y)
+end
+
+local function setYaw(cf, yaw)
+    return CFrame.new(cf.Position) * CFrame.Angles(0, math.rad(yaw), 0)
+end
+
+local function clearButtonEvents()
+    for _, conn in pairs(buttonConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    buttonConnections = {}
+end
+
+local function enableMoonwalk()
+    if GetRole() ~= "Survivor" then return end
+    if not charValid then 
+        if not updateCharacterRefs() then return end
+    end
+    if not rootPart or not humanoid then return end
+    if moonwalkActive then return end
+    moonwalkActive = true
+    humanoid.AutoRotate = false
+    baseYaw = getYaw(rootPart.CFrame)
+    currentYaw = baseYaw
+    if buttonMoonwalk then
+        pcall(function()
+            buttonMoonwalk.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+        end)
+    end
+end
+
+local function disableMoonwalk()
+    if not moonwalkActive then return end
+    moonwalkActive = false
+    if charValid and humanoid then
+        humanoid.AutoRotate = true
+    end
+    if buttonMoonwalk then
+        pcall(function()
+            buttonMoonwalk.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        end)
+    end
+    turningLeft = false
+    turningRight = false
+end
+
+local function destroyMoonwalkGUI()
+    if currentGui then
+        pcall(function() currentGui:Destroy() end)
+        currentGui = nil
+        buttonMoonwalk = nil
+    end
+end
+
+local function createMoonwalkGUI()
+    if GetRole() ~= "Survivor" then
+        return
+    end
+    
+    if currentGui then
+        destroyMoonwalkGUI()
+    end
+    
+    clearButtonEvents()
+    
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "MoonwalkController"
+    gui.IgnoreGuiInset = true
+    gui.ResetOnSpawn = false
+    gui.Parent = CoreGuiMoonwalk
+    currentGui = gui
+    
+    buttonMoonwalk = Instance.new("TextButton")
+    buttonMoonwalk.Size = UDim2.new(0, 45, 0, 45)
+    buttonMoonwalk.Position = UDim2.new(1, -50, 1, -110)
+    buttonMoonwalk.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    buttonMoonwalk.Text = "R"
+    buttonMoonwalk.TextColor3 = Color3.new(1, 1, 1)
+    buttonMoonwalk.TextScaled = true
+    buttonMoonwalk.BorderSizePixel = 0
+    buttonMoonwalk.Parent = gui
+    
+    local mouseDownConn = buttonMoonwalk.MouseButton1Down:Connect(enableMoonwalk)
+    table.insert(buttonConnections, mouseDownConn)
+    
+    local mouseUpConn = buttonMoonwalk.MouseButton1Up:Connect(disableMoonwalk)
+    table.insert(buttonConnections, mouseUpConn)
+    
+    local touchBeganConn = buttonMoonwalk.TouchBegan:Connect(enableMoonwalk)
+    table.insert(buttonConnections, touchBeganConn)
+    
+    local touchEndedConn = buttonMoonwalk.TouchEnded:Connect(disableMoonwalk)
+    table.insert(buttonConnections, touchEndedConn)
+end
+
+local function clearMoonwalkEvents()
+    for _, conn in ipairs(moonwalkConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    moonwalkConnections = {}
+    clearButtonEvents()
+end
+
+local function StopMoonwalk()
+    clearMoonwalkEvents()
+    destroyMoonwalkGUI()
+    if moonwalkActive then
+        disableMoonwalk()
+    end
+end
+
+local function StartMoonwalk()
+    if not _G.Moonwalk then return end
+    clearMoonwalkEvents()
+    moonwalkConnections = {}
+    
+    local touchMovedConn = UIS.TouchMoved:Connect(function(input)
+        if not moonwalkActive or GetRole() ~= "Survivor" then return end
+        if math.abs(input.Delta.X) > 3 then
+            if input.Delta.X > 0 then
+                turningRight = true
+                turningLeft = false
+            else
+                turningLeft = true
+                turningRight = false
+            end
+        end
+    end)
+    table.insert(moonwalkConnections, touchMovedConn)
+    
+    local touchEndedConn = UIS.TouchEnded:Connect(function()
+        turningLeft = false
+        turningRight = false
+    end)
+    table.insert(moonwalkConnections, touchEndedConn)
+    
+    local renderConn = RunService.RenderStepped:Connect(function(dt)
+        if not moonwalkActive then return end
+        if GetRole() ~= "Survivor" then
+            if moonwalkActive then disableMoonwalk() end
+            return
+        end
+        
+        local now = tick()
+        if now - lastCharCheck >= 0.5 then
+            lastCharCheck = now
+            if not charValid then
+                if not updateCharacterRefs() then return end
+            end
+        end
+        
+        if not rootPart or not humanoid or not rootPart.Parent then 
+            charValid = false
+            return 
+        end
+        
+        if turningLeft then
+            currentYaw = math.clamp(currentYaw - turnSpeed * dt, baseYaw - maxTurn, baseYaw + maxTurn)
+        elseif turningRight then
+            currentYaw = math.clamp(currentYaw + turnSpeed * dt, baseYaw - maxTurn, baseYaw + maxTurn)
+        else
+            if currentYaw < baseYaw then
+                currentYaw = math.min(currentYaw + returnSpeed * dt, baseYaw)
+            elseif currentYaw > baseYaw then
+                currentYaw = math.max(currentYaw - returnSpeed * dt, baseYaw)
+            end
+        end
+        
+        if rootPart and rootPart.Parent then
+            rootPart.CFrame = setYaw(CFrame.new(rootPart.CFrame.Position), currentYaw)
+        end
+    end)
+    table.insert(moonwalkConnections, renderConn)
+    
+    local charAddedConn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+        task.wait(0.2)
+        updateCharacterRefs(newChar)
+        if moonwalkActive then
+            disableMoonwalk()
+            task.wait(0.1)
+            if GetRole() == "Survivor" then
+                enableMoonwalk()
+            end
+        end
+    end)
+    table.insert(moonwalkConnections, charAddedConn)
+    
+    local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+        if GetRole() == "Survivor" then
+            createMoonwalkGUI()
+        else
+            destroyMoonwalkGUI()
+            if moonwalkActive then
+                disableMoonwalk()
+            end
+        end
+    end)
+    table.insert(moonwalkConnections, teamConn)
+    
+    updateCharacterRefs()
+    createMoonwalkGUI()
+end
+
+-- ==================== DISABLE SKILLCHECK SCRIPT ====================
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local destroyedRemotes = {
+    Healing = false,
+    Generator = false
+}
+
+local skillCheckConnections = {}
+local isSkillCheckEnabled = false
+
+local function safeDisconnectSkill(conn)
+    pcall(function() if conn then conn:Disconnect() end end)
+end
+
+local function clearSkillCheckConnections()
+    for _, conn in pairs(skillCheckConnections) do
+        safeDisconnectSkill(conn)
+    end
+    skillCheckConnections = {}
+end
+
+local function DisableSkillCheckEvent(folderName)
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then return false end
+
+    local targetFolder = Remotes:FindFirstChild(folderName)
+    if not targetFolder then return false end
+
+    local SkillCheckEvent = targetFolder:FindFirstChild("SkillCheckEvent")
+    if SkillCheckEvent then
+        pcall(function() SkillCheckEvent:Destroy() end)
+    end
+
+    destroyedRemotes[folderName] = true
+    return true
+end
+
+local function DestroyBoth()
+    if not isSkillCheckEnabled then return end
+    destroyedRemotes.Healing = false
+    destroyedRemotes.Generator = false
+    DisableSkillCheckEvent("Healing")
+    DisableSkillCheckEvent("Generator")
+end
+
+local function WatchFolder(folderName)
+    if not isSkillCheckEnabled then return end
+    
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then return end
+
+    local targetFolder = Remotes:FindFirstChild(folderName)
+    if not targetFolder then return end
+
+    local existing = targetFolder:FindFirstChild("SkillCheckEvent")
+    if existing then 
+        pcall(function() existing:Destroy() end)
+    end
+
+    local childConn = targetFolder.ChildAdded:Connect(function(child)
+        if isSkillCheckEnabled and child.Name == "SkillCheckEvent" then
+            pcall(function() child:Destroy() end)
+            destroyedRemotes[folderName] = true
+        end
+    end)
+    table.insert(skillCheckConnections, childConn)
+
+    local ancestryConn
+    ancestryConn = targetFolder.AncestryChanged:Connect(function()
+        if not targetFolder.Parent then
+            safeDisconnectSkill(childConn)
+            safeDisconnectSkill(ancestryConn)
+            for i = #skillCheckConnections, 1, -1 do
+                if skillCheckConnections[i] == childConn or skillCheckConnections[i] == ancestryConn then
+                    table.remove(skillCheckConnections, i)
+                end
+            end
+        end
+    end)
+    table.insert(skillCheckConnections, ancestryConn)
+end
+
+local function WatchRemotesFolder()
+    if not isSkillCheckEnabled then return end
+    
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then return end
+
+    local function AddWatcher(folderName)
+        local target = Remotes:FindFirstChild(folderName)
+        if target then
+            WatchFolder(folderName)
+        end
+    end
+
+    AddWatcher("Healing")
+    AddWatcher("Generator")
+
+    local remotesChildConn = Remotes.ChildAdded:Connect(function(child)
+        if isSkillCheckEnabled and (child.Name == "Healing" or child.Name == "Generator") then
+            task.wait(0.1)
+            WatchFolder(child.Name)
+            DisableSkillCheckEvent(child.Name)
+        end
+    end)
+    table.insert(skillCheckConnections, remotesChildConn)
+end
+
+local function SetupWatchers()
+    if not isSkillCheckEnabled then return false end
+    
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if Remotes then
+        DestroyBoth()
+        WatchRemotesFolder()
+        return true
+    end
+    return false
+end
+
+local function SafeDestroyOnRespawn(attempt)
+    attempt = attempt or 1
+    
+    if attempt > 10 then
+        return
+    end
+    
+    if not isSkillCheckEnabled then return end
+    
+    local success = pcall(SetupWatchers)
+    
+    if not success and attempt < 10 then
+        task.wait(0.5)
+        SafeDestroyOnRespawn(attempt + 1)
+    end
+end
+
+local function watchForRemotesFolder()
+    local remotesFolderConn = ReplicatedStorage.ChildAdded:Connect(function(child)
+        if child.Name == "Remotes" then
+            task.wait(0.2)
+            if isSkillCheckEnabled then
+                SafeDestroyOnRespawn(1)
+            end
+        end
+    end)
+    table.insert(skillCheckConnections, remotesFolderConn)
+end
+
+local function StopSkillCheck()
+    isSkillCheckEnabled = false
+    clearSkillCheckConnections()
+end
+
+local function StartSkillCheck()
+    if isSkillCheckEnabled then return end
+    isSkillCheckEnabled = true
+    skillCheckConnections = {}
+    watchForRemotesFolder()
+    SafeDestroyOnRespawn(1)
+end
+
+-- ==================== CROUSHAIR SCRIPT ====================
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local crosshairGui = nil
+local dot = nil
+local corner = nil
+
+local function CreateCroushair()
+    if crosshairGui then return end
+    
+    crosshairGui = Instance.new("ScreenGui")
+    crosshairGui.Name = "CustomCrosshair"
+    crosshairGui.ResetOnSpawn = false
+    crosshairGui.IgnoreGuiInset = true
+    crosshairGui.Parent = playerGui
+    
+    dot = Instance.new("Frame")
+    dot.Name = "Dot"
+    dot.Size = UDim2.new(0, 5, 0, 5)
+    dot.Position = UDim2.new(0.49, 0, 0.53, 0)
+    dot.AnchorPoint = Vector2.new(0.5, 0.5)
+    dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    dot.BorderSizePixel = 0
+    dot.ZIndex = 100
+    dot.Parent = crosshairGui
+    
+    corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0.5, 0)
+    corner.Parent = dot
+end
+
+local function RemoveCroushair()
+    if crosshairGui then
+        crosshairGui:Destroy()
+        crosshairGui = nil
+        dot = nil
+        corner = nil
+    end
+end
+
+-- ==================== SURVIVOR TAB (RAYFIELD) ====================
+local SurvivorTab = Window:CreateTab("🛡️ SURVIVOR")
+
+SurvivorTab:CreateParagraph({
+   Title = "⚔️ SURVIVOR MODS ⚔️",
+   Content = ""
+})
+
+-- DISABLE SKILLCHECK
+SurvivorTab:CreateToggle({
+   Name = "DISABLE SKILLCHECK",
+   CurrentValue = false,
+   Flag = "DisableSkillCheck",
+   Callback = function(Value)
+      _G.DisableSkillCheck = Value
+      if Value then
+         StartSkillCheck()
+      else
+         StopSkillCheck()
+      end
+   end,
+})
+
+-- ESP PLAYER
+SurvivorTab:CreateToggle({
+   Name = "ESP PLAYER",
+   CurrentValue = true,
+   Flag = "ESP_Player",
+   Callback = function(Value)
+      _G.ESP_Player = Value
+      if Value then
+         StartESP()
+      else
+         StopESP()
+      end
+   end,
+})
+
+-- MOONWALK
+SurvivorTab:CreateToggle({
+   Name = "MOONWALK",
+   CurrentValue = false,
+   Flag = "Moonwalk",
+   Callback = function(Value)
+      _G.Moonwalk = Value
+      if Value then
+         StartMoonwalk()
+      else
+         StopMoonwalk()
+      end
+   end,
+})
+
+-- CROUSHAIR
+SurvivorTab:CreateToggle({
+   Name = "CROUSHAIR",
+   CurrentValue = false,
+   Flag = "Croushair",
+   Callback = function(Value)
+      _G.Croushair = Value
+      if Value then
+         CreateCroushair()
+      else
+         RemoveCroushair()
+      end
+   end,
+})
+
+-- BYPASS ZOOM (UPDATED)
+SurvivorTab:CreateToggle({
+   Name = "BYPASS ZOOM",
+   CurrentValue = false,
+   Flag = "BypassZoom",
+   Callback = function(Value)
+      _G.BypassZoom = Value
+      if Value then
+         enableZoom()
+      else
+         disableZoom()
+      end
+   end,
+})
+
+-- ==================== KILLER TAB (RAYFIELD) ====================
+local KillerTab = Window:CreateTab("🔪 KILLER")
+
+KillerTab:CreateParagraph({
+   Title = "🗡️ KILLER MODS 🗡️",
+   Content = ""
+})
+
+-- AIMBOT
+KillerTab:CreateToggle({
+   Name = "AIMBOT",
+   CurrentValue = false,
+   Flag = "Aimbot",
+   Callback = function(Value)
+      _G.Aimbot = Value
+      if Value then
+         StartAimbot()
+      else
+         StopAimbot()
+      end
+   end,
+})
+
+-- HITBOX
+KillerTab:CreateToggle({
+   Name = "HITBOX",
+   CurrentValue = false,
+   Flag = "Hitbox",
+   Callback = function(Value)
+      _G.Hitbox = Value
+      if Value then
+         StartHitbox()
+      else
+         StopHitbox()
+      end
+   end,
+})
+
+-- SLIDER UKURAN HITBOX
+KillerTab:CreateSlider({
+   Name = "HITBOX SIZE",
+   Range = {10, 100},
+   Increment = 1,
+   Suffix = "Studs",
+   CurrentValue = 30,
+   Flag = "HitboxSize",
+   Callback = function(Value)
+      _G.HitboxSize = Value
+      UpdateHitboxSize(Value)
+   end,
+})
+
+-- SLIDER TRANSPARANSI HITBOX
+KillerTab:CreateSlider({
+   Name = "HITBOX TRANSPARENCY",
+   Range = {0, 1},
+   Increment = 0.05,
+   Suffix = "",
+   CurrentValue = 0.5,
+   Flag = "HitboxTransparency",
+   Callback = function(Value)
+      _G.HitboxTransparency = Value
+      UpdateHitboxTransparency(Value)
+   end,
+})
+
+-- ==================== VIP TAB ====================
+local VipTab = Window:CreateTab("⭐ VIP")
+VipTab:CreateParagraph({
+   Title = "👑 VIP FEATURES 👑",
+   Content = "VIP ONLY - PREMIUM FEATURES\n\nFitur eksklusif hanya untuk member VIP."
+})
+
+-- ==================== SETTING TAB ====================
+local SettingTab = Window:CreateTab("⚙️ SETTING")
+SettingTab:CreateParagraph({
+   Title = "⚙️ SETTINGS ⚙️",
+   Content = "PENGATURAN (COMING SOON)\n\n- Coming Soon -"
+})
+
+-- ==================== INFO TAB ====================
+local InfoTab = Window:CreateTab("ℹ️ INFO")
+InfoTab:CreateParagraph({
+   Title = "ℹ️ INFORMATION ℹ️",
+   Content = "BITWISE HUB V.2.0 [VIP]\nCREATED BY: DYVILLE XZ\nNODE-X | DELTA LITE\n\nALL FEATURES ARE FOR EDUCATIONAL PURPOSES ONLY.\n\n✅ FITUR AKTIF:\n• Disable Skillcheck\n• ESP Player\n• Moonwalk\n• Croushair\n• Bypass Zoom (V2)\n• Aimbot\n• Hitbox (Size + Transparency)"
+})
+
+print("BITWISE HUB V.2.0 [VIP] - RAYFIELD VERSION LOADED!")
+print("BYPASS ZOOM: ON = aktif zoom bebas, OFF = mati")
+print("AIMBOT: ON = aktif, OFF = mati")
+print("ESP PLAYER: ON = aktif, OFF = mati")
+print("HITBOX: ON = aktif, OFF = mati | SLIDER = atur ukuran + transparansi")
