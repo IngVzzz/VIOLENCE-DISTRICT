@@ -1,0 +1,104 @@
+-- ==================== BUTTON KOTAK UNTUK OPEN/CLOSE FRAME ====================
+local toggleButton = nil
+local isGuiVisible = true
+
+function window:CreateToggleButton(position, imageId, openImageId)
+    -- Hapus button lama kalo ada
+    if toggleButton and toggleButton.Parent then
+        toggleButton:Destroy()
+    end
+    
+    -- Bikin button kotak
+    toggleButton = Instance.new("ImageButton")
+    toggleButton.Name = "ToggleButton"
+    toggleButton.Size = UDim2.new(0, 55, 0, 55)
+    toggleButton.Position = position or UDim2.new(1, -75, 0.5, -27)
+    toggleButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    toggleButton.BackgroundTransparency = 0.15
+    toggleButton.Image = imageId or "rbxassetid://3926305904"
+    toggleButton.ScaleType = Enum.ScaleType.Fit
+    toggleButton.Parent = scrgui
+    
+    -- Bikin sudut melengkung
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 12)
+    btnCorner.Parent = toggleButton
+    
+    -- Efek shadow
+    local btnShadow = Instance.new("ImageLabel")
+    btnShadow.Name = "shadow"
+    btnShadow.Parent = toggleButton
+    btnShadow.AnchorPoint = Vector2.new(0.5, 0.5)
+    btnShadow.BackgroundTransparency = 1
+    btnShadow.Position = UDim2.new(0.5, 0, 0.5, 0)
+    btnShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
+    btnShadow.ZIndex = -1
+    btnShadow.Image = "rbxassetid://313486536"
+    btnShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+    btnShadow.ImageTransparency = 0.4
+    
+    -- Variabel buat drag
+    local draggingBtn = false
+    local dragBtnStart = nil
+    local btnStartPos = nil
+    local isDraggingBtn = false
+    
+    toggleButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            draggingBtn = true
+            isDraggingBtn = false
+            dragBtnStart = input.Position
+            btnStartPos = toggleButton.Position
+        end
+    end)
+    
+    toggleButton.InputChanged:Connect(function(input)
+        if draggingBtn and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragBtnStart
+            if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then
+                isDraggingBtn = true
+            end
+            toggleButton.Position = UDim2.new(btnStartPos.X.Scale, btnStartPos.X.Offset + delta.X, btnStartPos.Y.Scale, btnStartPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    toggleButton.InputEnded:Connect(function()
+        draggingBtn = false
+        task.wait(0.05)
+        isDraggingBtn = false
+    end)
+    
+    -- Fungsi toggle
+    local function ToggleFrame()
+        if isDraggingBtn then return end
+        self:ToggleVisible()
+        if toggleButton then
+            if openImageId then
+                if isGuiVisible then
+                    toggleButton.Image = openImageId
+                else
+                    toggleButton.Image = imageId
+                end
+            end
+        end
+    end
+    
+    toggleButton.MouseButton1Click:Connect(ToggleFrame)
+    
+    return toggleButton
+end
+
+function window:SetToggleButtonImage(openImageId, closeImageId)
+    if not toggleButton then return end
+    if openImageId then
+        _G.toggleOpenImage = openImageId
+    end
+    if closeImageId then
+        _G.toggleCloseImage = closeImageId
+    end
+    if isGuiVisible then
+        toggleButton.Image = _G.toggleCloseImage or toggleButton.Image
+    else
+        toggleButton.Image = _G.toggleOpenImage or toggleButton.Image
+    end
+end
