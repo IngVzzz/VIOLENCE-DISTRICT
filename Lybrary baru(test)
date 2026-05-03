@@ -3,12 +3,10 @@ local toggleButton = nil
 local isGuiVisible = true
 
 function window:CreateToggleButton(position, imageId, openImageId)
-    -- Hapus button lama kalo ada
     if toggleButton and toggleButton.Parent then
         toggleButton:Destroy()
     end
     
-    -- Bikin button kotak
     toggleButton = Instance.new("ImageButton")
     toggleButton.Name = "ToggleButton"
     toggleButton.Size = UDim2.new(0, 55, 0, 55)
@@ -19,12 +17,10 @@ function window:CreateToggleButton(position, imageId, openImageId)
     toggleButton.ScaleType = Enum.ScaleType.Fit
     toggleButton.Parent = scrgui
     
-    -- Bikin sudut melengkung
     local btnCorner = Instance.new("UICorner")
     btnCorner.CornerRadius = UDim.new(0, 12)
     btnCorner.Parent = toggleButton
     
-    -- Efek shadow
     local btnShadow = Instance.new("ImageLabel")
     btnShadow.Name = "shadow"
     btnShadow.Parent = toggleButton
@@ -37,7 +33,6 @@ function window:CreateToggleButton(position, imageId, openImageId)
     btnShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
     btnShadow.ImageTransparency = 0.4
     
-    -- Variabel buat drag
     local draggingBtn = false
     local dragBtnStart = nil
     local btnStartPos = nil
@@ -68,17 +63,14 @@ function window:CreateToggleButton(position, imageId, openImageId)
         isDraggingBtn = false
     end)
     
-    -- Fungsi toggle
     local function ToggleFrame()
         if isDraggingBtn then return end
-        self:ToggleVisible()
-        if toggleButton then
-            if openImageId then
-                if isGuiVisible then
-                    toggleButton.Image = openImageId
-                else
-                    toggleButton.Image = imageId
-                end
+        window:ToggleVisible()
+        if openImageId then
+            if isGuiVisible then
+                toggleButton.Image = openImageId
+            else
+                toggleButton.Image = imageId
             end
         end
     end
@@ -90,12 +82,8 @@ end
 
 function window:SetToggleButtonImage(openImageId, closeImageId)
     if not toggleButton then return end
-    if openImageId then
-        _G.toggleOpenImage = openImageId
-    end
-    if closeImageId then
-        _G.toggleCloseImage = closeImageId
-    end
+    if openImageId then _G.toggleOpenImage = openImageId end
+    if closeImageId then _G.toggleCloseImage = closeImageId end
     if isGuiVisible then
         toggleButton.Image = _G.toggleCloseImage or toggleButton.Image
     else
